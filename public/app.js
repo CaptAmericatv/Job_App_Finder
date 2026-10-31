@@ -17,6 +17,13 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
 }).addTo(map);
 const markers = L.layerGroup().addTo(map);
+// Inline SVG pin, so the map doesn't need Leaflet's PNG marker images.
+const PIN_ICON = L.divIcon({
+  className: '',
+  html: '<svg width="25" height="41" viewBox="0 0 25 41" xmlns="http://www.w3.org/2000/svg"><path d="M12.5 0C5.6 0 0 5.6 0 12.5 0 21.9 12.5 41 12.5 41S25 21.9 25 12.5C25 5.6 19.4 0 12.5 0z" fill="#2a81cb" stroke="#1d5f99"/><circle cx="12.5" cy="12.5" r="5" fill="#fff"/></svg>',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
 let centerMarker = null;
 let circle = null;
 
@@ -25,7 +32,7 @@ function setCenter(lat, lon, label) {
   $('locLabel').textContent = label || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   $('searchBtn').disabled = false;
   if (centerMarker) centerMarker.setLatLng([lat, lon]);
-  else centerMarker = L.marker([lat, lon]).addTo(map);
+  else centerMarker = L.marker([lat, lon], { icon: PIN_ICON }).addTo(map);
   drawCircle();
   map.fitBounds(circle.getBounds(), { padding: [10, 10] });
 }

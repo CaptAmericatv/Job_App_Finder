@@ -33,6 +33,8 @@ This needs a plan that can run **Node.js** (their Discord bot / Node.js hosting)
 
 Note: phones only allow **"Use my location"** on `https://` sites. Over plain `http://`, type an address or tap the map instead.
 
+**Deploy from the command line:** with `BISECT_API_KEY` set to a panel API key, run `npm ci --omit=dev && python3 scripts/deploy-bisect.py <server id>`. It uploads the app through the panel API, sets the main file to `server.js`, and starts the server. The panel may show the server as "Starting" forever; that's normal, the app is running.
+
 ### Settings (optional environment variables)
 
 | Variable | Default | What it does |
