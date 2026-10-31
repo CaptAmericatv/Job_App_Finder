@@ -1,7 +1,7 @@
 // Finds businesses on the map using OpenStreetMap (free, no API key).
 
 const UA = `JobAppFinder/1.0 (${process.env.CONTACT_EMAIL || 'personal job search tool'})`;
-const OVERPASS_URLS = (process.env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter')
+const OVERPASS_URLS = (process.env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter,https://overpass.private.coffee/api/interpreter,https://maps.mail.ru/osm/tools/overpass/api/interpreter,https://overpass.kumi.systems/api/interpreter')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
 export async function geocode(query) {
@@ -16,16 +16,21 @@ export async function geocode(query) {
 const KEYS = 'shop|amenity|office|craft|tourism|leisure|healthcare|club';
 const SKIP_AMENITY = /^(parking|bench|toilets|waste_basket|recycling|drinking_water|post_box|bicycle_parking|vending_machine|atm|charging_station|shelter|telephone|fountain|grave_yard|place_of_worship|parking_entrance|bus_station|taxi)$/;
 
+// A bounding box with one plain filter per business type is far cheaper for
+// the map server than "around" plus a regex on tag keys; the circle is
+// trimmed afterwards in parseElements.
+export function bbox(lat, lon, radiusMeters) {
+  const dLat = radiusMeters / 111_320;
+  const dLon = radiusMeters / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const r = (n) => n.toFixed(5);
+  return `${r(lat - dLat)},${r(lon - dLon)},${r(lat + dLat)},${r(lon + dLon)}`;
+}
+
 export function buildQuery(lat, lon, radiusMeters, includeNoWebsite) {
-  const a = `(around:${Math.round(radiusMeters)},${lat},${lon})`;
-  const filters = includeNoWebsite
-    ? [`nwr${a}["name"][~"^(${KEYS})$"~"."]`]
-    : [
-      `nwr${a}["name"]["website"][~"^(${KEYS})$"~"."]`,
-      `nwr${a}["name"]["contact:website"][~"^(${KEYS})$"~"."]`,
-      `nwr${a}["name"]["url"][~"^(${KEYS})$"~"."]`,
-    ];
-  return `[out:json][timeout:90];(${filters.join(';')};);out center tags;`;
+  const box = `(${bbox(lat, lon, radiusMeters)})`;
+  const sites = includeNoWebsite ? [''] : ['["website"]', '["contact:website"]', '["url"]'];
+  const filters = KEYS.split('|').flatMap((k) => sites.map((w) => `nwr["name"]["${k}"]${w}${box}`));
+  return `[out:json][timeout:180];(${filters.join(';')};);out center tags;`;
 }
 
 export function distanceMiles(lat1, lon1, lat2, lon2) {
@@ -54,7 +59,7 @@ export function normalizeWebsite(url) {
   }
 }
 
-export function parseElements(elements, lat, lon) {
+export function parseElements(elements, lat, lon, maxMiles = Infinity) {
   const seen = new Set();
   const out = [];
   for (const el of elements) {
@@ -63,6 +68,7 @@ export function parseElements(elements, lat, lon) {
     const plat = el.lat ?? el.center?.lat;
     const plon = el.lon ?? el.center?.lon;
     if (plat == null) continue;
+    if (distanceMiles(lat, lon, plat, plon) > maxMiles) continue;
     const id = `${el.type}/${el.id}`;
     if (seen.has(id)) continue;
     seen.add(id);
@@ -93,11 +99,12 @@ export async function findBusinesses({ lat, lon, radiusMiles, includeNoWebsite =
         method: 'POST',
         headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `data=${encodeURIComponent(query)}`,
-        signal: AbortSignal.timeout(100_000),
+        signal: AbortSignal.timeout(200_000),
       });
       if (!res.ok) throw new Error(`Map data server returned ${res.status}`);
       const data = await res.json();
-      return parseElements(data.elements || [], lat, lon);
+      if (data.remark && /runtime error|timed out|out of memory/i.test(data.remark)) throw new Error(data.remark);
+      return parseElements(data.elements || [], lat, lon, radiusMiles);
     } catch (e) {
       lastErr = e;
     }

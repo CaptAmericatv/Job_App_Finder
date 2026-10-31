@@ -77,7 +77,8 @@ test('robots.txt', () => {
 
 test('overpass parsing', () => {
   const q = buildQuery(1, 2, 1000, false);
-  assert.match(q, /around:1000,1,2/);
+  assert.match(q, /nwr\["name"\]\["shop"\]\["website"\]\(0\.99\d+,1\.99\d+,1\.00\d+,2\.00\d+\)/);
+  assert.doesNotMatch(buildQuery(1, 2, 1000, true), /website/);
   const out = parseElements([
     { type: 'node', id: 1, lat: 1.01, lon: 2, tags: { name: 'Far Cafe', amenity: 'cafe', website: 'farcafe.com' } },
     { type: 'way', id: 2, center: { lat: 1.001, lon: 2 }, tags: { name: 'Near Shop', shop: 'hardware', 'contact:website': 'https://near.shop/' } },
