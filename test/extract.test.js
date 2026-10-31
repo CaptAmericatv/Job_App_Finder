@@ -96,3 +96,10 @@ test('careers-page headings are not jobs', async () => {
   const $ = load('<h2>Team Member Careers</h2><h3>Count on my coworkers</h3><h3>Life at Our Store</h3><h3>Line Cook</h3><h3>Part-Time Cashier</h3>');
   assert.deepEqual(jobsFromHtml($, 'https://x.com/careers').map((j) => j.title), ['Line Cook', 'Part-Time Cashier']);
 });
+
+test('category headings are not jobs', async () => {
+  const { load } = await import('cheerio');
+  const { jobsFromHtml } = await import('../src/crawler.js');
+  const $ = load('<h3>Current Summer Camp / Seasonal Openings</h3><h3>Registration Assistant - Job Description</h3><h3>Health Services Positions</h3><h3>Support NACC</h3><h3>Housekeeper I - PT</h3><h3>Customer Support Specialist</h3>');
+  assert.deepEqual(jobsFromHtml($, 'https://x.com/careers').map((j) => j.title), ['Housekeeper I - PT', 'Customer Support Specialist']);
+});

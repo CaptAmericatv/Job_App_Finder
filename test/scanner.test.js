@@ -22,3 +22,10 @@ test('jobs that are gone are dropped', () => {
   const out = mergeResult(prev, { status: 'none', jobs: [] }, 'now');
   assert.equal(out.jobs.length, 0);
 });
+
+test('chain stores that block checks become leads', async () => {
+  const { chainLead } = await import('../src/scanner.js');
+  const r = chainLead({ brand: 'Dollar General', website: 'https://www.dollargeneral.com/store-directory/al/fort-payne/943' });
+  assert.equal(r.status, 'hiring-page');
+  assert.match(r.note, /Dollar General/);
+});

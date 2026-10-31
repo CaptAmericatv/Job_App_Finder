@@ -51,7 +51,7 @@ const ROLE_WORDS = new RegExp(
   'i',
 );
 // Headings on careers pages that aren't openings ("Team Member Careers", "Life at X").
-const HEADING_NOT_JOB = /\b(careers?|opportunities|benefits|culture|life at|why (work|join)|our (people|team|values|story)|current (team members|employees)|co-?workers|testimonials?|perks)\b/i;
+const HEADING_NOT_JOB = /(\bjob description\b|\bpositions$|\bopenings\b)|\b(careers?|opportunities|benefits|culture|life at|why (work|join)|our (people|team|values|story)|current (team members|employees)|co-?workers|testimonials?|perks)\b/i;
 const NOT_A_TITLE = /^(careers?|jobs?|apply( now| here| today| online)?|join (our|the) team|employment|open positions|current openings|view (all )?(jobs|openings|positions)|learn more|read more|home|about( us)?|contact( us)?|menu|search|benefits|our team|meet the team|faq|locations?)$/i;
 
 // ---------------- fetching ----------------
@@ -236,6 +236,7 @@ export function jobsFromHtml($, pageUrl) {
     if (NOT_A_TITLE.test(title)) return;
     if (!ROLE_WORDS.test(title)) return;
     if (HEADING_NOT_JOB.test(title)) return;
+    if (/^Support [A-Z]{2,}$/.test(title)) return; // "Support NACC" donation links
     if (/[.!?]$/.test(title) && title.split(' ').length > 6) return; // a sentence, not a title
     if (/[?!®™]|\(video\)|\bprograms?\b/i.test(title) || title.split(/\s+/).length > 8) return; // marketing copy
     const key = title.toLowerCase();

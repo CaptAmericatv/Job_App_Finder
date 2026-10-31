@@ -82,12 +82,19 @@ export async function runScan() {
     }
     progress = { startedAt, done: 0, total: withSite.length, message: `Checking ${withSite.length} business websites…` };
 
+    // Several places on the same website (Dollar General, post offices…) are a chain.
+    const perDomain = new Map();
+    for (const b of withSite) perDomain.set(domainOf(b.website), (perDomain.get(domainOf(b.website)) || 0) + 1);
+    const isChain = (b) => !!b.brand || perDomain.get(domainOf(b.website)) > 1;
+
     const queue = [...withSite];
     const worker = async () => {
       while (queue.length) {
         const b = queue.shift();
         const now = new Date().toISOString();
-        const next = await crawlBusiness(b.website, { chain: !!b.brand });
+        const chain = isChain(b);
+        let next = await crawlBusiness(b.website, { chain });
+        if (chain && next.status === 'error') next = chainLead(b);
         const entry = data.businesses[b.id];
         entry.result = mergeResult(entry.result, next, now);
         entry.checkedAt = now;
@@ -106,6 +113,20 @@ export async function runScan() {
     progress = null;
     await save();
   }
+}
+
+function domainOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, '').split('.').slice(-2).join('.'); } catch { return url; }
+}
+
+// Big chains' sites often refuse automated visitors; list the store as a lead instead.
+export function chainLead(b) {
+  return {
+    status: 'hiring-page',
+    jobs: [],
+    careersUrl: b.website,
+    note: `Chain store${b.brand ? ` (${b.brand})` : ''}. Their website can't be checked automatically. Apply on their careers site or ask in the store.`,
+  };
 }
 
 function countJobs() {
