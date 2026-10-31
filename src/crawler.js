@@ -44,11 +44,14 @@ const ATS = [
   { type: 'link', label: 'Indeed', re: /indeed\.com\/(?:cmp|job|viewjob)[^\s"'<>]*/i },
 ];
 
+// Role words must start a word, so "coworkers" doesn't count as "worker".
 const ROLE_WORDS = new RegExp(
-  ROLES.map((r) => r[2].source).join('|') +
-  '|attendant|operator|specialist|assistant|representative|coordinator|crew|staff|worker|agent|advisor|consultant|groomer|bather|trainer|cleaner|runner|bagger|picker',
+  '\\b(?:' + ROLES.map((r) => r[2].source).join('|') +
+  '|attendant|operator|specialist|assistant|representative|coordinator|crew|staff|worker|agent|advisor|consultant|groomer|bather|trainer|cleaner|runner|bagger|picker)',
   'i',
 );
+// Headings on careers pages that aren't openings ("Team Member Careers", "Life at X").
+const HEADING_NOT_JOB = /\b(careers?|opportunities|benefits|culture|life at|why (work|join)|our (people|team|values|story)|current (team members|employees)|co-?workers|testimonials?|perks)\b/i;
 const NOT_A_TITLE = /^(careers?|jobs?|apply( now| here| today| online)?|join (our|the) team|employment|open positions|current openings|view (all )?(jobs|openings|positions)|learn more|read more|home|about( us)?|contact( us)?|menu|search|benefits|our team|meet the team|faq|locations?)$/i;
 
 // ---------------- fetching ----------------
@@ -98,10 +101,21 @@ async function robotsAllows(url) {
     })());
   }
   const rules = await robotsCache.get(origin);
-  const path = new URL(url).pathname;
-  return !rules.some((rule) => rule && path.startsWith(rule));
+  const u = new URL(url);
+  return robotsAllowsPath(rules, u.pathname + u.search);
 }
 
+// Longest matching rule wins; Allow wins a tie (Google's rules).
+export function robotsAllowsPath(rules, path) {
+  let best = null;
+  for (const r of rules) {
+    if (!r.re.test(path)) continue;
+    if (!best || r.len > best.len || (r.len === best.len && r.allow)) best = r;
+  }
+  return !best || best.allow;
+}
+
+// Rules that apply to us: {allow, re, len}. Supports * and $ wildcards.
 export function parseRobots(text) {
   const rules = [];
   let applies = false;
@@ -115,9 +129,14 @@ export function parseRobots(text) {
       if (!sawAgent) applies = false;
       sawAgent = true;
       if (val === '*' || /jobappfinder/i.test(val)) applies = true;
-    } else {
+    } else if (key) {
       sawAgent = false;
-      if (applies && key === 'disallow' && val) rules.push(val.replace(/\*.*$/, ''));
+      if (applies && (key === 'disallow' || key === 'allow') && val) {
+        const anchored = val.endsWith('$');
+        const body = (anchored ? val.slice(0, -1) : val).split('*')
+          .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+        rules.push({ allow: key === 'allow', re: new RegExp('^' + body + (anchored ? '$' : '')), len: val.length });
+      }
     }
   }
   return rules;
@@ -134,11 +153,15 @@ function absolute(href, base) {
   } catch { return null; }
 }
 
+function siteKey(url) {
+  const parts = new URL(url).hostname.toLowerCase().split('.');
+  // example.co.uk keeps three parts; example.com keeps two.
+  const n = parts.length > 2 && parts.at(-1).length === 2 && /^(co|com|org|net|gov|ac|edu)$/.test(parts.at(-2)) ? 3 : 2;
+  return parts.slice(-n).join('.');
+}
+
 function sameSite(a, b) {
-  try {
-    const h = (u) => new URL(u).hostname.replace(/^www\./, '');
-    return h(a) === h(b);
-  } catch { return false; }
+  try { return siteKey(a) === siteKey(b); } catch { return false; }
 }
 
 export function detectAts(text) {
@@ -212,7 +235,9 @@ export function jobsFromHtml($, pageUrl) {
     if (title.length < 3 || title.length > 70) return;
     if (NOT_A_TITLE.test(title)) return;
     if (!ROLE_WORDS.test(title)) return;
+    if (HEADING_NOT_JOB.test(title)) return;
     if (/[.!?]$/.test(title) && title.split(' ').length > 6) return; // a sentence, not a title
+    if (/[?!®™]|\(video\)|\bprograms?\b/i.test(title) || title.split(/\s+/).length > 8) return; // marketing copy
     const key = title.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
@@ -225,6 +250,7 @@ export function jobsFromHtml($, pageUrl) {
       hours: parseHours(context),
       snippet: context.slice(0, 300),
       detailUrl: link && absolute(link, pageUrl) !== pageUrl ? absolute(link, pageUrl) : null,
+      guessed: true,
     });
   });
   return jobs.slice(0, 40);
@@ -304,12 +330,15 @@ export async function fetchAtsJobs(ats) {
 const cache = new Map();
 const CACHE_MS = 6 * 60 * 60 * 1000;
 
-export async function crawlBusiness(website) {
+// chain: the business is part of a brand (OSM "brand" tag). Chain career sites are
+// national and mostly built with JavaScript, so titles guessed from their headings
+// are usually marketing copy; only trust structured job data or job-board feeds there.
+export async function crawlBusiness(website, { chain = false } = {}) {
   if (!website) return { status: 'no-website', jobs: [] };
-  const key = website.toLowerCase().replace(/^https?:\/\/(www\.)?/, '');
+  const key = (chain ? 'chain:' : '') + website.toLowerCase().replace(/^https?:\/\/(www\.)?/, '');
   const hit = cache.get(key);
   if (hit && Date.now() - hit.time < CACHE_MS) return hit.result;
-  const result = await crawlUncached(website).catch((e) => ({ status: 'error', jobs: [], note: friendlyError(e) }));
+  const result = await crawlUncached(website, chain).catch((e) => ({ status: 'error', jobs: [], note: friendlyError(e) }));
   cache.set(key, { time: Date.now(), result });
   return result;
 }
@@ -322,7 +351,7 @@ function friendlyError(e) {
   return `Could not load website (${m.slice(0, 60)})`;
 }
 
-async function crawlUncached(website) {
+async function crawlUncached(website, chain) {
   let fetches = 0;
   const get = async (url) => {
     if (fetches >= MAX_FETCHES_PER_SITE) return null;
@@ -419,9 +448,12 @@ async function crawlUncached(website) {
     if (!j.snippet || j.snippet.length < 80) j.snippet = clean(text).slice(0, 300);
   }
 
+  if (chain) jobs = jobs.filter((j) => !j.guessed);
+
   // Dedupe and tidy.
   const unique = new Map();
   for (const j of jobs) {
+    delete j.guessed;
     const k = j.title.toLowerCase();
     if (!unique.has(k)) unique.set(k, { ...j, source: j.source || 'Company website', detailUrl: undefined });
   }

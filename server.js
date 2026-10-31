@@ -62,7 +62,7 @@ async function handleSearch(req, res, params) {
     const worker = async () => {
       while (queue.length && !closed) {
         const b = queue.shift();
-        const result = b.website ? await crawlBusiness(b.website) : { status: 'no-website', jobs: [] };
+        const result = b.website ? await crawlBusiness(b.website, { chain: !!b.brand }) : { status: 'no-website', jobs: [] };
         done++;
         send('result', { id: b.id, ...result, done, total: businesses.length });
       }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePay, parseHours, jobsFromJsonLd } from '../src/extract.js';
 import { applyEstimates, classifyRole, formatPay } from '../src/estimate.js';
-import { parseRobots } from '../src/crawler.js';
+import { parseRobots, robotsAllowsPath } from '../src/crawler.js';
 import { parseElements, buildQuery } from '../src/places.js';
 
 test('hourly range', () => {
@@ -62,7 +62,17 @@ test('formatPay', () => {
 });
 
 test('robots.txt', () => {
-  assert.deepEqual(parseRobots('User-agent: Googlebot\nDisallow: /x\n\nUser-agent: *\nDisallow: /admin\nDisallow: /cart*'), ['/admin', '/cart']);
+  const rules = parseRobots('User-agent: Googlebot\nDisallow: /\n\nUser-agent: *\nDisallow: /admin\nDisallow: /cart*\nDisallow: /*?query-\nDisallow: /*.pdf$\nAllow: /admin/jobs');
+  assert.equal(robotsAllowsPath(rules, '/'), true);
+  assert.equal(robotsAllowsPath(rules, '/careers'), true);
+  assert.equal(robotsAllowsPath(rules, '/admin/x'), false);
+  assert.equal(robotsAllowsPath(rules, '/admin/jobs'), true);
+  assert.equal(robotsAllowsPath(rules, '/cart/1'), false);
+  assert.equal(robotsAllowsPath(rules, '/search?query-x'), false);
+  assert.equal(robotsAllowsPath(rules, '/menu.pdf'), false);
+  assert.equal(robotsAllowsPath(rules, '/menu.pdf?v=2'), true);
+  // An empty or wildcard-only rule set must not block the whole site.
+  assert.equal(robotsAllowsPath(parseRobots('User-agent: *\nDisallow:\nDisallow: /*?s='), '/jobs'), true);
 });
 
 test('overpass parsing', () => {
@@ -77,4 +87,11 @@ test('overpass parsing', () => {
   assert.equal(out[0].name, 'Near Shop');
   assert.equal(out[0].website, 'https://near.shop');
   assert.equal(out[1].website, 'https://farcafe.com');
+});
+
+test('careers-page headings are not jobs', async () => {
+  const { load } = await import('cheerio');
+  const { jobsFromHtml } = await import('../src/crawler.js');
+  const $ = load('<h2>Team Member Careers</h2><h3>Count on my coworkers</h3><h3>Life at Our Store</h3><h3>Line Cook</h3><h3>Part-Time Cashier</h3>');
+  assert.deepEqual(jobsFromHtml($, 'https://x.com/careers').map((j) => j.title), ['Line Cook', 'Part-Time Cashier']);
 });
