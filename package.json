@@ -1,0 +1,28 @@
+{
+  "name": "job-app-finder",
+  "version": "1.0.0",
+  "description": "Find jobs within a radius by checking local business websites",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CaptAmericatv/Job_App_Finder.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/CaptAmericatv/Job_App_Finder/issues"
+  },
+  "homepage": "https://github.com/CaptAmericatv/Job_App_Finder#readme",
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "leaflet": "^1.9.4"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  }
+}
