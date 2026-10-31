@@ -2,16 +2,17 @@
 
 Finds jobs near you by checking **local businesses' own websites**, not just job sites like Snagajob or LinkedIn. Many small businesses only post openings on their own "Careers" or "Join our team" page.
 
-1. Pick a spot (type an address, use your location, or tap the map) and a radius.
-2. The app pulls every business inside that circle from OpenStreetMap that lists a website.
+The app runs all the time. It checks the area around its home location (default: **Fort Payne, AL**, 15 miles) when it starts and every 12 hours after that, and saves the results to `data/results.json`. Opening the page shows the saved jobs right away; **Check now** starts a fresh check (at most once every 30 minutes).
+
+1. The app pulls every business inside the circle from OpenStreetMap.
 3. It visits each website, finds the careers page, and reads the openings. It also reads the job boards small businesses often use (BambooHR, Greenhouse, Lever, Workable, Recruitee, Breezy, Ashby, SmartRecruiters). For boards it can't read (Workday, Paylocity, ADP, Indeed, etc.) it links you to them.
 4. For each job it shows the **pay** and **hours** when listed. When they aren't listed, it shows an **estimate** (purple, marked `EST.`):
-   - first from similar jobs it found nearby in the same search (median),
+   - first from similar jobs it found nearby (median),
    - otherwise from built-in typical pay ranges by job type.
    Enter your local minimum wage to keep estimates from going below it.
 5. **Leads** tab: businesses that have a careers page or a "Now hiring" notice but no openings the app could read. Worth a click or a visit.
 
-You can save jobs (☆), filter, sort by pay, and download everything as a CSV.
+Jobs found in the last 3 days are marked **NEW**. If a website can't be loaded during a check, its jobs from the last check are kept. You can save jobs (☆, stored on your device), filter, sort by newest or pay, and download everything as a CSV.
 
 ## Run it
 
@@ -41,8 +42,13 @@ Note: phones only allow **"Use my location"** on `https://` sites. Over plain `h
 | --- | --- | --- |
 | `PORT` | 3000 | Port to listen on |
 | `CONTACT_EMAIL` | — | Added to the map-data requests, as OpenStreetMap asks |
+| `HOME_NAME` | Fort Payne, AL | Label for the home location |
+| `HOME_LAT` / `HOME_LON` | 34.4443 / -85.7197 | Center of the area to check |
+| `RADIUS_MILES` | 15 | How far out to check |
+| `SCAN_EVERY_HOURS` | 12 | How often to re-check automatically |
+| `DATA_DIR` | `data/` | Where results are saved |
 | `CONCURRENCY` | 8 | Websites checked at the same time |
-| `MAX_BUSINESSES` | 400 | Upper limit per search |
+| `MAX_BUSINESSES` | 1000 | Most websites checked per round (closest first) |
 | `MAX_FETCHES_PER_SITE` | 10 | Pages loaded per website |
 | `OVERPASS_URL` | public servers | Map data server(s), comma separated |
 

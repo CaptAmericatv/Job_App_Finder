@@ -17,7 +17,7 @@ import io, json, os, sys, tarfile, time, urllib.error, urllib.request
 
 PANEL = "https://games.bisecthosting.com/api/client"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP_DIRS = {".git", "test", "scripts"}
+SKIP_DIRS = {".git", "test", "scripts", "data"}  # data/ holds saved results on the server
 MAX_JSON = 800_000
 KEY = os.environ.get("BISECT_API_KEY") or sys.exit("Set BISECT_API_KEY")
 

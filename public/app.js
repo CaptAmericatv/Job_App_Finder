@@ -2,17 +2,16 @@ import { applyEstimates, formatPay, formatHours } from '/lib/estimate.js';
 
 const $ = (id) => document.getElementById(id);
 const state = {
-  center: null,
+  lastFinished: null,
   businesses: new Map(),
   results: new Map(),
   jobs: [],
   tab: 'jobs',
-  source: null,
   saved: loadSaved(),
 };
 
 // ---------- map ----------
-const map = L.map('map').setView([39.5, -98.35], 4);
+const map = L.map('map').setView([34.4443, -85.7197], 11);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
 }).addTo(map);
@@ -24,115 +23,92 @@ const PIN_ICON = L.divIcon({
   iconSize: [25, 41],
   iconAnchor: [12, 41],
 });
-let centerMarker = null;
-let circle = null;
+let homeDrawn = false;
 
-function setCenter(lat, lon, label) {
-  state.center = { lat, lon };
-  $('locLabel').textContent = label || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-  $('searchBtn').disabled = false;
-  if (centerMarker) centerMarker.setLatLng([lat, lon]);
-  else centerMarker = L.marker([lat, lon], { icon: PIN_ICON }).addTo(map);
-  drawCircle();
+function drawHome(home) {
+  if (homeDrawn) return;
+  homeDrawn = true;
+  L.marker([home.lat, home.lon], { icon: PIN_ICON }).addTo(map);
+  const circle = L.circle([home.lat, home.lon], { radius: home.radiusMiles * 1609.34, color: '#1f7a4d', weight: 1, fillOpacity: 0.06 }).addTo(map);
   map.fitBounds(circle.getBounds(), { padding: [10, 10] });
 }
 
-function drawCircle() {
-  if (!state.center) return;
-  const meters = +$('radius').value * 1609.34;
-  if (circle) circle.setLatLng([state.center.lat, state.center.lon]).setRadius(meters);
-  else circle = L.circle([state.center.lat, state.center.lon], { radius: meters, color: '#1f7a4d', weight: 1, fillOpacity: 0.06 }).addTo(map);
+// ---------- saved results from the server ----------
+let pollTimer = null;
+let wasScanning = false;
+
+async function load() {
+  clearTimeout(pollTimer);
+  let d;
+  try {
+    d = await fetch('/api/results').then((x) => x.json());
+  } catch {
+    status('Could not reach the server. Retrying…');
+    pollTimer = setTimeout(load, 30_000);
+    return;
+  }
+  $('homeName').textContent = d.home.name;
+  $('homeArea').textContent = `Within ${d.home.radiusMiles} miles · checked every ${d.everyHours} hours`;
+  drawHome(d.home);
+
+  const fresh = !state.businesses.size || wasScanning || d.lastScan?.finishedAt !== state.lastFinished;
+  state.lastFinished = d.lastScan?.finishedAt;
+  if (fresh) applyData(d.businesses);
+
+  const s = d.scanning;
+  $('scanBtn').disabled = !!s;
+  $('progress').hidden = !s;
+  if (s) {
+    $('bar').style.width = s.total ? `${(100 * s.done) / s.total}%` : '5%';
+    status(s.total ? `Checking websites now: ${s.done} of ${s.total}. Saved jobs are shown below.` : s.message);
+  } else if (d.lastScan?.finishedAt) {
+    const err = d.lastScan.error && Date.parse(d.lastScan.failedAt) > Date.parse(d.lastScan.finishedAt) ? ' Last check failed; will retry soon.' : '';
+    status(`Updated ${ago(d.lastScan.finishedAt)} · ${d.lastScan.checked} websites checked.${err}`);
+  } else {
+    status(d.lastScan?.error ? `First check failed (${d.lastScan.error}). Retrying soon.` : 'First check starting. Jobs will appear here in a few minutes.');
+  }
+  wasScanning = !!s;
+  pollTimer = setTimeout(load, s ? 10_000 : 5 * 60_000);
 }
 
-map.on('click', (e) => setCenter(e.latlng.lat, e.latlng.lng));
-$('radius').addEventListener('input', () => {
-  $('radiusOut').textContent = $('radius').value;
-  drawCircle();
-});
-$('radius').addEventListener('change', () => circle && map.fitBounds(circle.getBounds(), { padding: [10, 10] }));
-
-$('locForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const q = $('locInput').value.trim();
-  if (!q) return;
-  status('Looking up address…');
-  try {
-    const r = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`).then((x) => x.json());
-    if (r.error) throw new Error(r.error);
-    if (!r.length) return status('Address not found. Try adding the city and state.');
-    setCenter(r[0].lat, r[0].lon, r[0].name);
-    status('');
-  } catch (err) { status(err.message); }
-});
-
-$('gpsBtn').addEventListener('click', () => {
-  if (!navigator.geolocation) return status('Location is not available in this browser.');
-  status('Getting your location…');
-  navigator.geolocation.getCurrentPosition(
-    (p) => { setCenter(p.coords.latitude, p.coords.longitude, 'Your current location'); status(''); },
-    () => status('Could not get your location. Type an address or tap the map instead.'),
-    { enableHighAccuracy: true, timeout: 15000 },
-  );
-});
-
-// ---------- search ----------
-$('searchBtn').addEventListener('click', startSearch);
-$('stopBtn').addEventListener('click', () => stopSearch('Stopped.'));
-
-function startSearch() {
-  if (!state.center) return;
-  stopSearch();
+function applyData(list) {
   state.businesses.clear();
   state.results.clear();
   state.jobs = [];
   markers.clearLayers();
-  render();
-  const p = new URLSearchParams({
-    lat: state.center.lat, lon: state.center.lon, radius: $('radius').value,
-    limit: $('limit').value, noWebsite: $('noWebsite').checked ? '1' : '0',
-  });
-  const es = new EventSource(`/api/search?${p}`);
-  state.source = es;
-  $('searchBtn').disabled = true;
-  $('stopBtn').hidden = false;
-  $('progress').hidden = false;
-  $('bar').style.width = '0';
-
-  es.addEventListener('status', (e) => status(JSON.parse(e.data).message));
-  es.addEventListener('businesses', (e) => {
-    const d = JSON.parse(e.data);
-    for (const b of d.businesses) { state.businesses.set(b.id, b); addMarker(b); }
-    status(d.businesses.length
-      ? `Checking ${d.businesses.length} business websites${d.limited ? ` (closest ${d.businesses.length} of ${d.total})` : ''}…`
-      : 'No businesses with websites found here. Try a bigger radius.');
-    if (!d.businesses.length) stopSearch();
-  });
-  es.addEventListener('result', (e) => {
-    const r = JSON.parse(e.data);
-    state.results.set(r.id, r);
-    const b = state.businesses.get(r.id);
-    for (const j of r.jobs) state.jobs.push({ ...j, businessId: r.id, key: `${r.id}|${j.title}` });
-    updateMarker(b, r);
-    $('bar').style.width = `${(100 * r.done) / r.total}%`;
-    status(`Checked ${r.done} of ${r.total} websites — ${state.jobs.length} jobs so far`);
-    scheduleRender();
-  });
-  es.addEventListener('done', () => stopSearch(`Done. Found ${state.jobs.length} jobs and ${leads().length} hiring leads.`));
-  es.addEventListener('fail', (e) => stopSearch(JSON.parse(e.data).error));
-  es.onerror = () => { if (state.source) stopSearch('Connection lost. Results so far are shown below.'); };
-}
-
-function stopSearch(msg) {
-  if (state.source) state.source.close();
-  state.source = null;
-  $('searchBtn').disabled = !state.center;
-  $('stopBtn').hidden = true;
-  $('progress').hidden = true;
-  if (msg) status(msg);
+  markerById.clear();
+  for (const b of list) {
+    state.businesses.set(b.id, b);
+    if (!b.website) continue; // no-website businesses only appear in Leads
+    addMarker(b);
+    if (!b.result) continue;
+    state.results.set(b.id, b.result);
+    for (const j of b.result.jobs) state.jobs.push({ ...j, businessId: b.id, key: `${b.id}|${j.title}` });
+    updateMarker(b, b.result);
+  }
+  for (const b of list) if (!b.website) state.results.set(b.id, b.result || { status: 'no-website', jobs: [] });
   render();
 }
+
+$('scanBtn').addEventListener('click', async () => {
+  $('scanBtn').disabled = true;
+  const r = await fetch('/api/scan', { method: 'POST' }).then((x) => x.json()).catch(() => ({ error: 'Could not reach the server.' }));
+  if (r.error) { status(r.error); $('scanBtn').disabled = false; return; }
+  wasScanning = true;
+  load();
+});
 
 function status(msg) { $('status').textContent = msg; }
+
+function ago(iso) {
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h} hr${h > 1 ? 's' : ''} ago` : `${Math.round(h / 24)} days ago`;
+}
+const NEW_DAYS = 3;
+const isNew = (j) => j.firstSeen && Date.now() - Date.parse(j.firstSeen) < NEW_DAYS * 86_400_000;
 
 // ---------- markers ----------
 const markerById = new Map();
@@ -152,7 +128,7 @@ function updateMarker(b, r) {
 function popupHtml(b) {
   const r = state.results.get(b.id);
   const jobs = r?.jobs?.length ? `<br><b>${r.jobs.length} job${r.jobs.length > 1 ? 's' : ''}:</b> ${r.jobs.slice(0, 4).map((j) => esc(j.title)).join(', ')}` : '';
-  const note = r?.note ? `<br><i>${esc(r.note)}</i>` : r ? '' : '<br><i>Checking…</i>';
+  const note = r?.note ? `<br><i>${esc(r.note)}</i>` : r ? '' : '<br><i>Not checked yet</i>';
   const link = safeUrl(r?.careersUrl || b.website);
   return `<b>${esc(b.name)}</b><br>${esc(b.category)} · ${b.distance} mi${jobs}${note}${link ? `<br><a href="${link}" target="_blank" rel="noopener">Open website</a>` : ''}`;
 }
@@ -188,6 +164,7 @@ function render() {
   const ls = leads().filter(({ b }) => !kw || `${b.name} ${b.category}`.toLowerCase().includes(kw));
 
   const sorter = {
+    new: (a, b) => (Date.parse(b.firstSeen || 0) - Date.parse(a.firstSeen || 0)) || (dist(a) - dist(b)),
     distance: (a, b) => (dist(a) - dist(b)),
     pay: (a, b) => ((payOf(b)?.hourlyMax || 0) - (payOf(a)?.hourlyMax || 0)),
     name: (a, b) => biz(a).name.localeCompare(biz(b).name),
@@ -201,7 +178,7 @@ function render() {
   const list = $('list');
   if (state.tab === 'jobs') {
     list.innerHTML = jobs.length ? jobs.map((j) => jobCard(j, biz(j))).join('')
-      : `<p class="empty">${state.source ? 'Searching… jobs will show up here as they are found.' : state.results.size ? 'No jobs match. Check the Leads tab for businesses with hiring pages.' : 'Pick a location and tap <b>Find jobs</b>.'}</p>`;
+      : `<p class="empty">${state.results.size ? 'No jobs match. Check the Leads tab for businesses with hiring pages.' : 'No saved jobs yet. The first check runs automatically.'}</p>`;
   } else if (state.tab === 'leads') {
     ls.sort((a, b) => a.b.distance - b.b.distance);
     list.innerHTML = ls.length ? ls.map(({ b, r }) => leadCard(b, r)).join('') : '<p class="empty">No leads yet. Leads are businesses with a careers page or "now hiring" notice where openings couldn\'t be read automatically.</p>';
@@ -224,11 +201,11 @@ function jobCard(j, b) {
   const maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${b.name} ${b.address || ''}`)}${b.lat ? `&center=${b.lat},${b.lon}` : ''}`;
   const on = !!state.saved[j.key];
   return `<article class="card">
-    <h3><span>${esc(j.title)}</span><button class="star ${on ? 'on' : ''}" data-key="${esc(j.key)}" aria-label="Save job">${on ? '★' : '☆'}</button></h3>
+    <h3><span>${esc(j.title)}${isNew(j) ? '<span class="new">NEW</span>' : ''}</span><button class="star ${on ? 'on' : ''}" data-key="${esc(j.key)}" aria-label="Save job">${on ? '★' : '☆'}</button></h3>
     <div class="biz">${esc(b.name)} · ${b.distance ?? '?'} mi · ${esc(b.category || '')}</div>
     ${pay}${hrs}
     ${j.snippet ? `<div class="snippet">${esc(j.snippet)}</div>` : ''}
-    <div class="basis">Source: ${esc(j.source || 'Company website')}${j.posted ? ` · posted ${esc(String(j.posted).slice(0, 10))}` : ''}</div>
+    <div class="basis">Source: ${esc(j.source || 'Company website')}${j.posted ? ` · posted ${esc(String(j.posted).slice(0, 10))}` : ''}${j.firstSeen ? ` · found ${esc(ago(j.firstSeen))}` : ''}</div>
     <div class="actions">
       ${url ? `<a href="${url}" target="_blank" rel="noopener">View / apply</a>` : ''}
       <a href="${maps}" target="_blank" rel="noopener">Directions</a>
@@ -279,7 +256,7 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
   state.tab = t.dataset.tab;
   render();
 }));
-['keyword', 'sort', 'onlyListed', 'floor'].forEach((id) => $(id).addEventListener('input', render));
+['keyword', 'sort', 'onlyListed', 'floor', 'noWebsite'].forEach((id) => $(id).addEventListener('input', render));
 
 $('csvBtn').addEventListener('click', () => {
   const rows = [['Job title', 'Business', 'Distance (mi)', 'Pay', 'Pay is estimate', 'Hours', 'Hours is estimate', 'Category', 'Address', 'Phone', 'Link']];
@@ -304,3 +281,4 @@ function safeUrl(u) {
 }
 
 render();
+load();

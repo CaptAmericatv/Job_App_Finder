@@ -11,49 +11,26 @@
 <body>
   <header class="top">
     <h1>Job App Finder</h1>
-    <p class="tag">Finds openings on local businesses' own websites — including jobs not posted on job sites.</p>
+    <p class="tag">Openings from local businesses' own websites, checked automatically.</p>
   </header>
 
   <main class="layout">
     <section class="panel controls">
-      <form id="locForm" class="row">
-        <input id="locInput" type="search" placeholder="Address, city, or ZIP" autocomplete="street-address" aria-label="Location">
-        <button type="submit" class="btn">Go</button>
-      </form>
-      <div class="row">
-        <button id="gpsBtn" type="button" class="btn ghost">📍 Use my location</button>
-        <span class="hint">…or tap the map</span>
-      </div>
-      <div id="locLabel" class="hint loc-label">No location picked yet</div>
-
-      <label class="field">
-        <span>Radius: <strong id="radiusOut">3</strong> miles</span>
-        <input id="radius" type="range" min="0.5" max="25" step="0.5" value="3">
-      </label>
-
-      <div class="row two">
-        <label class="field">
-          <span>Businesses to check</span>
-          <select id="limit">
-            <option value="50">Up to 50 (fast)</option>
-            <option value="150" selected>Up to 150</option>
-            <option value="300">Up to 300</option>
-            <option value="400">Up to 400 (slow)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Local minimum wage (optional)</span>
-          <input id="floor" type="number" inputmode="decimal" min="0" step="0.25" placeholder="e.g. 15.00">
-        </label>
-      </div>
-      <label class="check"><input id="noWebsite" type="checkbox"> Also list businesses with no website (as leads to call/visit)</label>
-
-      <div class="row">
-        <button id="searchBtn" type="button" class="btn primary" disabled>Find jobs</button>
-        <button id="stopBtn" type="button" class="btn ghost" hidden>Stop</button>
+      <div class="home">
+        <div>
+          <div class="home-name">📍 <span id="homeName">Fort Payne, AL</span></div>
+          <div class="hint" id="homeArea"></div>
+        </div>
+        <button id="scanBtn" type="button" class="btn ghost sm">Check now</button>
       </div>
       <div id="progress" class="progress" hidden><div id="bar"></div></div>
-      <div id="status" class="hint" role="status"></div>
+      <div id="status" class="hint" role="status">Loading saved jobs…</div>
+
+      <label class="field">
+        <span>Local minimum wage (optional)</span>
+        <input id="floor" type="number" inputmode="decimal" min="0" step="0.25" placeholder="e.g. 7.25">
+      </label>
+      <label class="check"><input id="noWebsite" type="checkbox"> Show businesses with no website in Leads (to call or visit)</label>
     </section>
 
     <section class="panel mapwrap"><div id="map"></div>
@@ -69,6 +46,7 @@
       <div class="filters row">
         <input id="keyword" type="search" placeholder="Filter: e.g. cook, part-time, driver" aria-label="Filter results">
         <select id="sort" aria-label="Sort">
+          <option value="new">Newest</option>
           <option value="distance">Closest</option>
           <option value="pay">Highest pay</option>
           <option value="name">Business A–Z</option>
@@ -78,7 +56,7 @@
         <label class="check"><input id="onlyListed" type="checkbox"> Only show listed pay (no estimates)</label>
         <button id="csvBtn" type="button" class="btn ghost sm">Download CSV</button>
       </div>
-      <div id="list" class="list"><p class="empty">Pick a location and tap <b>Find jobs</b>.</p></div>
+      <div id="list" class="list"><p class="empty">Loading…</p></div>
     </section>
   </main>
 

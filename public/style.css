@@ -61,3 +61,8 @@ input[type=search], input[type=number], select {
 .star.on { color: #e0a800; }
 .empty { color: var(--muted); text-align: center; padding: 20px 0; }
 .leaflet-popup-content { font: 13px/1.4 system-ui, sans-serif; }
+.home { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+#status { margin-bottom: 12px; }
+.home-name { font-weight: 600; font-size: 16px; }
+.new { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; background: var(--accent); color: var(--accent-ink); margin-left: 6px; vertical-align: 2px; }
+.btn:disabled { opacity: .5; cursor: default; }
