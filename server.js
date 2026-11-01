@@ -22,7 +22,7 @@ async function serveStatic(res, pathname) {
   if (pathname.startsWith('/lib/')) { base = join(ROOT, 'src'); rel = pathname.slice(4); }
   else if (pathname.startsWith('/vendor/leaflet/')) { base = join(ROOT, 'node_modules', 'leaflet', 'dist'); rel = pathname.slice(15); }
   const file = normalize(join(base, rel));
-  if (!file.startsWith(base) || (pathname.startsWith('/lib/') && !/^\/(estimate)\.js$/.test(rel))) {
+  if (!file.startsWith(base) || (pathname.startsWith('/lib/') && !/^\/(estimate|medical)\.js$/.test(rel))) {
     res.writeHead(404); return res.end('Not found');
   }
   try {

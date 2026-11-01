@@ -1,4 +1,5 @@
 import { applyEstimates, formatPay, formatHours } from '/lib/estimate.js';
+import { isMedicalJob } from '/lib/medical.js';
 
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -140,15 +141,18 @@ function addMarker(b) {
 function updateMarker(b, r) {
   const m = markerById.get(b?.id);
   if (!m) return;
-  const color = r.status === 'jobs' ? '#1f7a4d' : r.status === 'hiring-page' ? '#c26a12' : '#9aa39d';
-  m.setStyle({ color, fillColor: color, radius: r.status === 'jobs' ? 8 : r.status === 'hiring-page' ? 6 : 4 });
-  if (r.status === 'jobs') m.bringToFront();
+  // A business whose only jobs are hidden medical ones looks like "nothing found".
+  const st = medicalOff(b) ? 'none' : r.status === 'jobs' && !r.jobs.some((j) => j.where !== 'away' && !medicalOff(b, j)) ? 'none' : r.status;
+  const color = st === 'jobs' ? '#1f7a4d' : st === 'hiring-page' ? '#c26a12' : '#9aa39d';
+  m.setStyle({ color, fillColor: color, radius: st === 'jobs' ? 8 : st === 'hiring-page' ? 6 : 4 });
+  if (st === 'jobs') m.bringToFront();
 }
 function popupHtml(b) {
   const r = state.results.get(b.id);
-  const here = (r?.jobs || []).filter((j) => j.where !== 'away');
+  const here = (r?.jobs || []).filter((j) => j.where !== 'away' && !medicalOff(b, j));
   const jobs = here.length ? `<br><b>${here.length} job${here.length > 1 ? 's' : ''}:</b> ${here.slice(0, 4).map((j) => esc(j.title)).join(', ')}` : '';
-  const note = r?.note ? `<br><i>${esc(r.note)}</i>` : r ? '' : '<br><i>Not checked yet</i>';
+  const note = medicalOff(b) ? '<br><i>Medical jobs are hidden (see "Hide medical jobs").</i>'
+    : r?.note ? `<br><i>${esc(r.note)}</i>` : r ? '' : '<br><i>Not checked yet</i>';
   const link = safeUrl(r?.careersUrl || b.website);
   return `<b>${esc(b.name)}</b><br>${esc(b.category)} · ${b.distance} mi${jobs}${note}${link ? `<br><a href="${link}" target="_blank" rel="noopener">Open website</a>` : ''}`;
 }
@@ -196,7 +200,24 @@ const hiddenGroups = new Set(loadHiddenGroups());
 function loadHiddenGroups() {
   try { return JSON.parse(localStorage.getItem('hiddenGroups') || '[]'); } catch { return []; }
 }
-const shown = (b) => !hiddenGroups.has(groupOf(b));
+const shown = (b) => !hiddenGroups.has(groupOf(b)) && !medicalOff(b);
+
+// "Hide medical jobs": on unless the user turned it off on this device.
+function loadHideMedical() {
+  try { return localStorage.getItem('hideMedical') !== 'no'; } catch { return true; }
+}
+$('hideMedical').checked = loadHideMedical();
+// True when this business (or, with a job, that job) is hidden by the setting.
+// Every Healthcare-category business counts, plus medical job titles anywhere.
+function medicalOff(b, j) {
+  if (!$('hideMedical').checked) return false;
+  return groupOf(b) === 'health' || (!!j && isMedicalJob(j));
+}
+$('hideMedical').addEventListener('change', () => {
+  try { localStorage.setItem('hideMedical', $('hideMedical').checked ? 'yes' : 'no'); } catch { /* storage unavailable */ }
+  for (const [id, r] of state.results) updateMarker(state.businesses.get(id), r);
+  render();
+});
 
 function renderGroups(jobs) {
   const counts = new Map();
@@ -204,7 +225,8 @@ function renderGroups(jobs) {
     const g = groupOf(state.businesses.get(j.businessId));
     counts.set(g, (counts.get(g) || 0) + 1);
   }
-  $('groups').innerHTML = GROUPS.filter(([key]) => counts.has(key) || hiddenGroups.has(key)).map(([key, label]) => {
+  const medOff = $('hideMedical').checked;
+  $('groups').innerHTML = GROUPS.filter(([key]) => (counts.has(key) || hiddenGroups.has(key)) && !(medOff && key === 'health')).map(([key, label]) => {
     const on = !hiddenGroups.has(key);
     return `<button type="button" class="chip ${on ? 'on' : ''}" data-group="${key}" aria-pressed="${on}">${esc(label)} <span>${counts.get(key) || 0}</span></button>`;
   }).join('');
@@ -238,7 +260,10 @@ function render() {
   const match = (j, b) => !kw || [j.title, b.name, b.category, formatHours(j.hours || j.estimatedHours), j.snippet].join(' ').toLowerCase().includes(kw);
 
   const hideMaybe = $('hideMaybe').checked;
-  const candidates = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe));
+  const candidates = state.jobs.filter((j) => {
+    const b = state.businesses.get(j.businessId);
+    return match(j, b) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe) && !medicalOff(b, j);
+  });
   renderGroups(candidates);
   let jobs = candidates.filter((j) => shown(state.businesses.get(j.businessId)));
   const savedJobs = Object.values(state.saved);
@@ -393,6 +418,7 @@ $('csvBtn').addEventListener('click', () => {
   const rows = [['Job title', 'Business', 'Distance (mi)', 'Pay', 'Pay is estimate', 'Hours', 'Hours is estimate', 'Category', 'Address', 'Phone', 'Link']];
   for (const j of state.jobs) {
     const b = biz(j);
+    if (medicalOff(b, j)) continue;
     rows.push([j.title, b.name, b.distance, formatPay(payOf(j)), j.pay ? 'no' : 'yes', j.hours?.types?.length ? formatHours(j.hours) : j.estimatedHours?.text || '', j.hours?.types?.length ? 'no' : 'yes', b.category, b.address || '', b.phone || '', j.url || '']);
   }
   for (const { b, r } of leads()) rows.push(['(hiring lead)', b.name, b.distance, '', '', '', '', b.category, b.address || '', b.phone || '', r.careersUrl || b.website || '']);
