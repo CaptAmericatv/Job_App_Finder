@@ -51,6 +51,8 @@ async function load() {
   $('homeName').textContent = d.home.name;
   const town = d.home.name.split(',')[0];
   $('fbSearch').href = `https://www.facebook.com/search/posts/?q=${encodeURIComponent(`hiring ${town}`)}`;
+  // LinkedIn's distance choices are 5, 10, 25, 50 and 100 miles; 25 covers the area.
+  $('liSearch').href = `https://www.linkedin.com/jobs/search/?location=${encodeURIComponent(d.home.name.replace(/, AL$/, ', Alabama'))}&distance=25`;
   $('fbGroups').href = `https://www.facebook.com/search/groups/?q=${encodeURIComponent(`${town} jobs`)}`;
   $('homeArea').textContent = `Within ${d.home.radiusMiles} miles · checked every ${d.everyHours} hours`;
   drawHome(d.home);
