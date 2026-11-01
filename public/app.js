@@ -86,14 +86,21 @@ function applyData(list) {
     if (!b.website) continue; // no-website businesses only appear in Leads
     addMarker(b);
     if (!b.result) continue;
-    state.results.set(b.id, b.result);
-    for (const j of b.result.jobs) {
+    let r = b.result;
+    // Careers site with openings only in other places: show it as a lead.
+    if (r.status === 'jobs' && !r.jobs.some((j) => j.where !== 'away')) {
+      r = { ...r, status: 'hiring-page', jobs: [], note: 'Has a careers site, but no openings listed for this area right now.' };
+    }
+    b.result = r;
+    state.results.set(b.id, r);
+    for (const j of r.jobs) {
       const same = `${j.title.toLowerCase()}|${j.url || ''}`;
+      if (j.where === 'away') continue; // job is somewhere else; never shown
       if (seen.has(same)) continue;
       seen.add(same);
       state.jobs.push({ ...j, businessId: b.id, key: `${b.id}|${j.title}` });
     }
-    updateMarker(b, b.result);
+    updateMarker(b, r);
   }
   for (const b of list) if (!b.website) state.results.set(b.id, b.result || { status: 'no-website', jobs: [] });
   render();
@@ -228,10 +235,7 @@ function render() {
   const match = (j, b) => !kw || [j.title, b.name, b.category, formatHours(j.hours || j.estimatedHours), j.snippet].join(' ').toLowerCase().includes(kw);
 
   const hideMaybe = $('hideMaybe').checked;
-  const showAway = $('showAway').checked;
-  const nAway = state.jobs.filter((j) => j.where === 'away').length;
-  $('nAway').textContent = nAway ? ` (${nAway})` : '';
-  const candidates = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe) && (showAway || j.where !== 'away'));
+  const candidates = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe));
   renderGroups(candidates);
   let jobs = candidates.filter((j) => shown(state.businesses.get(j.businessId)));
   const savedJobs = Object.values(state.saved);
@@ -280,7 +284,7 @@ function jobCard(j, b) {
   return `<article class="card">
     <h3><span>${esc(j.title)}${isNew(j) ? '<span class="new">NEW</span>' : ''}${j.maybe ? '<span class="maybe">MAYBE</span>' : ''}</span><button class="star ${on ? 'on' : ''}" data-key="${esc(j.key)}" aria-label="Save job">${on ? '★' : '☆'}</button></h3>
     <div class="biz">${esc(b.name)} · ${b.distance ?? '?'} mi · ${esc(b.category || '')}</div>
-    ${j.where === 'away' ? `<div class="away">📍 Not in this area${j.whereNote ? `: ${esc(j.whereNote)}` : ''}</div>` : j.location ? `<div class="basis">📍 ${esc(j.location)}</div>` : ''}
+    ${j.location ? `<div class="basis">📍 ${esc(j.location)}</div>` : ''}
     ${j.maybe ? `<div class="basis">Might not be an opening: ${esc(j.maybe.toLowerCase())}. Check the link.</div>` : ''}
     ${pay}${hrs}
     ${j.snippet ? `<div class="snippet">${esc(j.snippet)}</div>` : ''}
@@ -375,7 +379,7 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
   state.tab = t.dataset.tab;
   render();
 }));
-['keyword', 'sort', 'onlyListed', 'hideMaybe', 'showAway', 'floor', 'noWebsite'].forEach((id) => $(id).addEventListener('input', render));
+['keyword', 'sort', 'onlyListed', 'hideMaybe', 'floor', 'noWebsite'].forEach((id) => $(id).addEventListener('input', render));
 
 $('csvBtn').addEventListener('click', () => {
   const rows = [['Job title', 'Business', 'Distance (mi)', 'Pay', 'Pay is estimate', 'Hours', 'Hours is estimate', 'Category', 'Address', 'Phone', 'Link']];

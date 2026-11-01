@@ -91,43 +91,45 @@ export function parseElements(elements, lat, lon, maxMiles = Infinity) {
   return out.sort((x, y) => x.distance - y.distance);
 }
 
-export async function findBusinesses({ lat, lon, radiusMiles, includeNoWebsite = false }) {
-  const query = buildQuery(lat, lon, radiusMiles * 1609.34, includeNoWebsite);
+// The public map servers are often busy (504). Try each one, and go round
+// a few times with a pause before giving up.
+async function overpass(query, timeoutMs) {
   let lastErr;
-  for (const base of OVERPASS_URLS) {
-    try {
-      const res = await fetch(base, {
-        method: 'POST',
-        headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: AbortSignal.timeout(200_000),
-      });
-      if (!res.ok) throw new Error(`Map data server returned ${res.status}`);
-      const data = await res.json();
-      if (data.remark && /runtime error|timed out|out of memory/i.test(data.remark)) throw new Error(data.remark);
-      return parseElements(data.elements || [], lat, lon, radiusMiles);
-    } catch (e) {
-      lastErr = e;
+  for (let round = 0; round < 3; round++) {
+    if (round) await new Promise((r) => setTimeout(r, 30_000 * round));
+    for (const base of OVERPASS_URLS) {
+      try {
+        const res = await fetch(base, {
+          method: 'POST',
+          headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!res.ok) throw new Error(`Map data server returned ${res.status}`);
+        const data = await res.json();
+        if (data.remark && /runtime error|timed out|out of memory/i.test(data.remark)) throw new Error(data.remark);
+        return data;
+      } catch (e) {
+        lastErr = e;
+      }
     }
   }
-  throw new Error(`Could not load businesses from the map: ${lastErr?.message}`);
+  throw lastErr;
+}
+
+export async function findBusinesses({ lat, lon, radiusMiles, includeNoWebsite = false }) {
+  const query = buildQuery(lat, lon, radiusMiles * 1609.34, includeNoWebsite);
+  try {
+    const data = await overpass(query, 200_000);
+    return parseElements(data.elements || [], lat, lon, radiusMiles);
+  } catch (e) {
+    throw new Error(`Could not load businesses from the map: ${e.message}`);
+  }
 }
 
 // Names of towns and villages in the area, for telling local jobs from ones elsewhere.
 export async function findTowns({ lat, lon, radiusMiles }) {
   const query = `[out:json][timeout:60];node["place"~"^(city|town|village|hamlet|suburb)$"](${bbox(lat, lon, radiusMiles * 1609.34)});out tags;`;
-  for (const base of OVERPASS_URLS) {
-    try {
-      const res = await fetch(base, {
-        method: 'POST',
-        headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: AbortSignal.timeout(90_000),
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
-      return (data.elements || []).map((e) => e.tags?.name).filter(Boolean);
-    } catch { /* try the next server */ }
-  }
-  return [];
+  const data = await overpass(query, 90_000);
+  return (data.elements || []).map((e) => e.tags?.name).filter(Boolean);
 }

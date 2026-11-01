@@ -163,13 +163,13 @@ function countJobs() {
 }
 
 // Run a scan when the last good one is older than SCAN_EVERY_HOURS.
-// A failed scan is retried after 30 minutes.
+// A failed scan is retried after 15 minutes.
 export function startSchedule() {
   const tick = () => {
     const last = data.lastScan?.finishedAt ? Date.parse(data.lastScan.finishedAt) : 0;
     const failed = data.lastScan?.failedAt ? Date.parse(data.lastScan.failedAt) : 0;
     // rescanRequested: set in data/results.json by hand (or by a deploy) to check early.
-    const due = (data.rescanRequested || Date.now() - last > SCAN_EVERY_HOURS * 3_600_000) && Date.now() - failed > 30 * 60_000;
+    const due = (data.rescanRequested || Date.now() - last > SCAN_EVERY_HOURS * 3_600_000) && Date.now() - failed > 15 * 60_000;
     if (due) runScan();
   };
   setTimeout(tick, 5_000);
