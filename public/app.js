@@ -77,6 +77,7 @@ function applyData(list) {
   state.jobs = [];
   markers.clearLayers();
   markerById.clear();
+  groupCache.clear();
   for (const b of list) {
     state.businesses.set(b.id, b);
     if (!b.website) continue; // no-website businesses only appear in Leads
@@ -141,10 +142,68 @@ function scheduleRender() {
   setTimeout(() => { renderQueued = false; render(); }, 250);
 }
 
+// Fast food: the map's own "fast food" label, plus common chains that are
+// sometimes labeled as a regular restaurant.
+const FAST_FOOD_CHAINS = /\b(mcdonald|burger king|wendy|sonic|taco bell|kfc|kentucky fried|chick-fil-a|zaxby|arby|hardee|jack's|subway|popeyes|dairy queen|\bdq\b|captain d|krystal|checkers|rally's|pizza hut|domino|papa john|little caesar|little caesars|marco's pizza|hungry howie|bojangles|church's|long john silver|whataburger|five guys|jimmy john|firehouse subs|jersey mike|wingstop|panda express|chipotle|moe's|taco casa|del taco|starbucks|dunkin|krispy kreme|huddle house|waffle house)/i;
+const FAST_FOOD_LIGHT = /\b(huddle house|waffle house)/i; // diners: only hidden when labeled fast food
+function isFastFood(b) {
+  if (!b) return false;
+  if (/fast food/i.test(b.category || '')) return true;
+  const name = `${b.name || ''} ${b.brand || ''}`;
+  return FAST_FOOD_CHAINS.test(name) && !FAST_FOOD_LIGHT.test(name);
+}
+
+// Business categories for the filter buttons, checked in this order.
+const GROUPS = [
+  ['fast', 'Fast food', (b, c) => isFastFood(b)],
+  ['food', 'Restaurants & cafes', (b, c) => /amenity: (restaurant|cafe|bar|pub|ice cream|food court|biergarten)/.test(c)],
+  ['health', 'Healthcare', (b, c) => /^healthcare|amenity: (hospital|clinic|doctors|dentist|pharmacy|veterinary|nursing home|social facility)|shop: (chemist|optician|medical supply|hearing aids)/.test(c)],
+  ['public', 'Schools & government', (b, c) => /amenity: (school|college|university|kindergarten|childcare|library|post office|townhall|courthouse|police|fire station|community centre)|office: government/.test(c) || /post office|school|college|county|city of/i.test(b.name || '')],
+  ['lodging', 'Hotels & camps', (b, c) => /tourism: (hotel|motel|guest house|camp site|caravan site|hostel|chalet|apartment)|leisure: (summer camp|resort)/.test(c) || /\bcamp\b/i.test(b.name || '')],
+  ['auto', 'Auto', (b, c) => /shop: (car|car repair|car parts|tyres|motorcycle)|amenity: (fuel|car wash|car rental)/.test(c)],
+  ['stores', 'Stores', (b, c) => /^shop:/.test(c)],
+  ['other', 'Other', () => true],
+];
+const groupCache = new Map();
+function groupOf(b) {
+  if (!b) return 'other';
+  if (!groupCache.has(b.id)) {
+    const c = (b.category || '').toLowerCase();
+    groupCache.set(b.id, GROUPS.find(([, , test]) => test(b, c))[0]);
+  }
+  return groupCache.get(b.id);
+}
+const hiddenGroups = new Set(loadHiddenGroups());
+function loadHiddenGroups() {
+  try { return JSON.parse(localStorage.getItem('hiddenGroups') || '[]'); } catch { return []; }
+}
+const shown = (b) => !hiddenGroups.has(groupOf(b));
+
+function renderGroups(jobs) {
+  const counts = new Map();
+  for (const j of jobs) {
+    const g = groupOf(state.businesses.get(j.businessId));
+    counts.set(g, (counts.get(g) || 0) + 1);
+  }
+  $('groups').innerHTML = GROUPS.filter(([key]) => counts.has(key) || hiddenGroups.has(key)).map(([key, label]) => {
+    const on = !hiddenGroups.has(key);
+    return `<button type="button" class="chip ${on ? 'on' : ''}" data-group="${key}" aria-pressed="${on}">${esc(label)} <span>${counts.get(key) || 0}</span></button>`;
+  }).join('');
+}
+$('groups').addEventListener('click', (e) => {
+  const key = e.target.closest('.chip')?.dataset.group;
+  if (!key) return;
+  if (hiddenGroups.has(key)) hiddenGroups.delete(key); else hiddenGroups.add(key);
+  try { localStorage.setItem('hiddenGroups', JSON.stringify([...hiddenGroups])); } catch { /* storage unavailable */ }
+  render();
+});
+
 function leads() {
   const out = [];
   for (const [id, r] of state.results) {
-    if (r.status === 'hiring-page' || (r.status === 'no-website' && $('noWebsite').checked)) out.push({ b: state.businesses.get(id), r });
+    const b = state.businesses.get(id);
+    if (!shown(b)) continue;
+    if (r.status === 'hiring-page' || (r.status === 'no-website' && $('noWebsite').checked)) out.push({ b, r });
   }
   return out;
 }
@@ -160,7 +219,9 @@ function render() {
   const match = (j, b) => !kw || [j.title, b.name, b.category, formatHours(j.hours || j.estimatedHours), j.snippet].join(' ').toLowerCase().includes(kw);
 
   const hideMaybe = $('hideMaybe').checked;
-  let jobs = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe));
+  const candidates = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe));
+  renderGroups(candidates);
+  let jobs = candidates.filter((j) => shown(state.businesses.get(j.businessId)));
   const savedJobs = Object.values(state.saved);
   const ls = leads().filter(({ b }) => !kw || `${b.name} ${b.category}`.toLowerCase().includes(kw));
 
