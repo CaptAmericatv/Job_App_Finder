@@ -4,8 +4,9 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findBusinesses } from './places.js';
+import { findBusinesses, findTowns } from './places.js';
 import { crawlBusiness } from './crawler.js';
+import { localityChecker } from './locality.js';
 
 export const HOME = {
   name: process.env.HOME_NAME || 'Fort Payne, AL',
@@ -13,6 +14,7 @@ export const HOME = {
   lon: +process.env.HOME_LON || -85.7197,
   radiusMiles: +process.env.RADIUS_MILES || 15,
 };
+const HOME_STATE = process.env.HOME_STATE || (HOME.name.split(',')[1] || 'AL').trim();
 const SCAN_EVERY_HOURS = +process.env.SCAN_EVERY_HOURS || 12;
 const MIN_MINUTES_BETWEEN_MANUAL = 30;
 const CONCURRENCY = +process.env.CONCURRENCY || 8;
@@ -30,6 +32,7 @@ export async function loadSaved() {
   try {
     data = JSON.parse(await readFile(FILE, 'utf8'));
     data.businesses ||= {};
+    annotateAll();
   } catch (e) {
     if (e.code !== 'ENOENT') console.error('Could not read saved results:', e.message);
   }
@@ -71,6 +74,8 @@ export async function runScan() {
   progress = { startedAt, done: 0, total: 0, message: 'Finding businesses on the map…' };
   try {
     const all = await findBusinesses({ ...HOME, includeNoWebsite: true });
+    const towns = await findTowns(HOME).catch(() => []);
+    if (towns.length) data.towns = towns;
     const withSite = all.filter((b) => b.website).slice(0, MAX_BUSINESSES);
     const keep = new Set([...all.filter((b) => !b.website), ...withSite].map((b) => b.id));
     // Drop businesses that are no longer on the map (or outside the limit).
@@ -103,6 +108,7 @@ export async function runScan() {
       }
     };
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    annotateAll();
     data.lastScan = { startedAt, finishedAt: new Date().toISOString(), checked: withSite.length, total: all.length };
     console.log(`Scan done: ${withSite.length} websites checked, ${countJobs()} jobs.`);
   } catch (e) {
@@ -112,6 +118,28 @@ export async function runScan() {
   } finally {
     progress = null;
     await save();
+  }
+}
+
+// Mark each job local or elsewhere ("where"/"whereNote"), using the towns in
+// the area. Chains (brand, or several places on one website) list company-wide jobs.
+export function annotateAll() {
+  const list = Object.values(data.businesses);
+  const towns = [
+    HOME.name.split(',')[0],
+    ...(data.towns || []),
+    ...list.map((b) => b.city).filter(Boolean),
+  ];
+  const where = localityChecker({ towns, homeState: HOME_STATE });
+  const perDomain = new Map();
+  for (const b of list) if (b.website) perDomain.set(domainOf(b.website), (perDomain.get(domainOf(b.website)) || 0) + 1);
+  for (const b of list) {
+    const chain = !!b.brand || (b.website && perDomain.get(domainOf(b.website)) > 1);
+    for (const j of b.result?.jobs || []) {
+      const w = where(j, { chain });
+      j.where = w.where;
+      j.whereNote = w.note || null;
+    }
   }
 }
 

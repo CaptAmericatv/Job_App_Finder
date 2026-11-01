@@ -71,3 +71,4 @@ input[type=search], input[type=number], select {
 .chip { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 16px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; text-decoration: line-through; }
 .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); text-decoration: none; }
 .chip span { font-size: 12px; opacity: .8; }
+.away { font-size: 13px; font-weight: 600; color: var(--warn); }

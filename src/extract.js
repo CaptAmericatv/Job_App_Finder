@@ -187,10 +187,23 @@ export function jobsFromJsonLd(blocks, pageUrl) {
         hours: hours.types.length || hours.perWeek || hours.schedule.length ? hours : null,
         posted: node.datePosted || null,
         snippet: description.slice(0, 300),
+        location: ldLocation(node),
       });
     }
   }
   return jobs;
+}
+
+// "City, ST" from a JobPosting's jobLocation (or "Remote").
+function ldLocation(node) {
+  if (/TELECOMMUTE/i.test(String(node.jobLocationType || ''))) return 'Remote';
+  const places = [].concat(node.jobLocation || []).map((loc) => {
+    const a = loc?.address || loc || {};
+    if (typeof a === 'string') return clean(a);
+    const country = typeof a.addressCountry === 'object' ? a.addressCountry?.name : a.addressCountry;
+    return [a.addressLocality, a.addressRegion, /^(US|USA|United States)$/i.test(country || '') ? null : country].filter(Boolean).map((x) => clean(String(x))).join(', ');
+  }).filter(Boolean);
+  return places.length ? [...new Set(places)].join(' / ') : null;
 }
 
 function num(v) {

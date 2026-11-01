@@ -78,13 +78,21 @@ function applyData(list) {
   markers.clearLayers();
   markerById.clear();
   groupCache.clear();
-  for (const b of list) {
+  // The same posting often shows up on every location of a chain: list it once,
+  // under the closest one.
+  const seen = new Set();
+  for (const b of [...list].sort((x, y) => x.distance - y.distance)) {
     state.businesses.set(b.id, b);
     if (!b.website) continue; // no-website businesses only appear in Leads
     addMarker(b);
     if (!b.result) continue;
     state.results.set(b.id, b.result);
-    for (const j of b.result.jobs) state.jobs.push({ ...j, businessId: b.id, key: `${b.id}|${j.title}` });
+    for (const j of b.result.jobs) {
+      const same = `${j.title.toLowerCase()}|${j.url || ''}`;
+      if (seen.has(same)) continue;
+      seen.add(same);
+      state.jobs.push({ ...j, businessId: b.id, key: `${b.id}|${j.title}` });
+    }
     updateMarker(b, b.result);
   }
   for (const b of list) if (!b.website) state.results.set(b.id, b.result || { status: 'no-website', jobs: [] });
@@ -128,7 +136,8 @@ function updateMarker(b, r) {
 }
 function popupHtml(b) {
   const r = state.results.get(b.id);
-  const jobs = r?.jobs?.length ? `<br><b>${r.jobs.length} job${r.jobs.length > 1 ? 's' : ''}:</b> ${r.jobs.slice(0, 4).map((j) => esc(j.title)).join(', ')}` : '';
+  const here = (r?.jobs || []).filter((j) => j.where !== 'away');
+  const jobs = here.length ? `<br><b>${here.length} job${here.length > 1 ? 's' : ''}:</b> ${here.slice(0, 4).map((j) => esc(j.title)).join(', ')}` : '';
   const note = r?.note ? `<br><i>${esc(r.note)}</i>` : r ? '' : '<br><i>Not checked yet</i>';
   const link = safeUrl(r?.careersUrl || b.website);
   return `<b>${esc(b.name)}</b><br>${esc(b.category)} · ${b.distance} mi${jobs}${note}${link ? `<br><a href="${link}" target="_blank" rel="noopener">Open website</a>` : ''}`;
@@ -219,7 +228,10 @@ function render() {
   const match = (j, b) => !kw || [j.title, b.name, b.category, formatHours(j.hours || j.estimatedHours), j.snippet].join(' ').toLowerCase().includes(kw);
 
   const hideMaybe = $('hideMaybe').checked;
-  const candidates = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe));
+  const showAway = $('showAway').checked;
+  const nAway = state.jobs.filter((j) => j.where === 'away').length;
+  $('nAway').textContent = nAway ? ` (${nAway})` : '';
+  const candidates = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe) && (showAway || j.where !== 'away'));
   renderGroups(candidates);
   let jobs = candidates.filter((j) => shown(state.businesses.get(j.businessId)));
   const savedJobs = Object.values(state.saved);
@@ -265,6 +277,7 @@ function jobCard(j, b) {
   return `<article class="card">
     <h3><span>${esc(j.title)}${isNew(j) ? '<span class="new">NEW</span>' : ''}${j.maybe ? '<span class="maybe">MAYBE</span>' : ''}</span><button class="star ${on ? 'on' : ''}" data-key="${esc(j.key)}" aria-label="Save job">${on ? '★' : '☆'}</button></h3>
     <div class="biz">${esc(b.name)} · ${b.distance ?? '?'} mi · ${esc(b.category || '')}</div>
+    ${j.where === 'away' ? `<div class="away">📍 Not in this area${j.whereNote ? `: ${esc(j.whereNote)}` : ''}</div>` : j.location ? `<div class="basis">📍 ${esc(j.location)}</div>` : ''}
     ${j.maybe ? `<div class="basis">Might not be an opening: ${esc(j.maybe.toLowerCase())}. Check the link.</div>` : ''}
     ${pay}${hrs}
     ${j.snippet ? `<div class="snippet">${esc(j.snippet)}</div>` : ''}
@@ -319,7 +332,7 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
   state.tab = t.dataset.tab;
   render();
 }));
-['keyword', 'sort', 'onlyListed', 'hideMaybe', 'floor', 'noWebsite'].forEach((id) => $(id).addEventListener('input', render));
+['keyword', 'sort', 'onlyListed', 'hideMaybe', 'showAway', 'floor', 'noWebsite'].forEach((id) => $(id).addEventListener('input', render));
 
 $('csvBtn').addEventListener('click', () => {
   const rows = [['Job title', 'Business', 'Distance (mi)', 'Pay', 'Pay is estimate', 'Hours', 'Hours is estimate', 'Category', 'Address', 'Phone', 'Link']];

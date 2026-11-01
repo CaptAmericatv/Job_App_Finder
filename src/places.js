@@ -84,6 +84,7 @@ export function parseElements(elements, lat, lon, maxMiles = Infinity) {
       website: normalizeWebsite(tags.website || tags['contact:website'] || tags.url || tags['brand:website']),
       phone: tags.phone || tags['contact:phone'] || null,
       address: address || null,
+      city: tags['addr:city'] || null,
       hours: tags.opening_hours || null,
     });
   }
@@ -110,4 +111,23 @@ export async function findBusinesses({ lat, lon, radiusMiles, includeNoWebsite =
     }
   }
   throw new Error(`Could not load businesses from the map: ${lastErr?.message}`);
+}
+
+// Names of towns and villages in the area, for telling local jobs from ones elsewhere.
+export async function findTowns({ lat, lon, radiusMiles }) {
+  const query = `[out:json][timeout:60];node["place"~"^(city|town|village|hamlet|suburb)$"](${bbox(lat, lon, radiusMiles * 1609.34)});out tags;`;
+  for (const base of OVERPASS_URLS) {
+    try {
+      const res = await fetch(base, {
+        method: 'POST',
+        headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: AbortSignal.timeout(90_000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      return (data.elements || []).map((e) => e.tags?.name).filter(Boolean);
+    } catch { /* try the next server */ }
+  }
+  return [];
 }

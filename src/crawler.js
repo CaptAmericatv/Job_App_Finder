@@ -277,8 +277,14 @@ function ldBlocks($) {
 
 const LEVER_UNITS = { 'per-hour-wage': 'hour', 'per-year-salary': 'year', 'per-month-salary': 'month', 'per-week-salary': 'week', 'per-day-wage': 'day', 'one-time': null };
 
+// "City, ST" from whatever parts a job board gives; null when there are none.
+function joinPlace(parts) {
+  const list = [].concat(parts || []).map((x) => clean(String(x ?? ''))).filter(Boolean);
+  return list.length ? [...new Set(list)].join(', ') : null;
+}
+
 function fromText(title, url, text, extra = {}) {
-  return { title: clean(title), url, pay: extra.pay || parsePay(text), hours: extra.hours || parseHours(text), snippet: clean(text).slice(0, 300) };
+  return { title: clean(title), url, pay: extra.pay || parsePay(text), hours: extra.hours || parseHours(text), snippet: clean(text).slice(0, 300), location: joinPlace(extra.location) };
 }
 
 export async function fetchAtsJobs(ats) {
@@ -286,7 +292,7 @@ export async function fetchAtsJobs(ats) {
   switch (ats.type) {
     case 'greenhouse': {
       const d = await fetchJson(`https://boards-api.greenhouse.io/v1/boards/${t}/jobs?content=true`);
-      return (d.jobs || []).map((j) => fromText(j.title, j.absolute_url, `${j.location?.name || ''} ${stripHtml(stripHtml(j.content || ''))}`));
+      return (d.jobs || []).map((j) => fromText(j.title, j.absolute_url, `${j.location?.name || ''} ${stripHtml(stripHtml(j.content || ''))}`, { location: j.location?.name }));
     }
     case 'lever': {
       const d = await fetchJson(`https://api.lever.co/v0/postings/${t}?mode=json`);
@@ -294,20 +300,20 @@ export async function fetchAtsJobs(ats) {
         const sr = j.salaryRange;
         const pay = sr ? normalizePay(sr.min, sr.max, LEVER_UNITS[sr.interval], 'listed salary') : null;
         const text = `${j.categories?.commitment || ''} ${j.descriptionPlain || ''} ${(j.lists || []).map((l) => stripHtml(l.content)).join(' ')} ${j.additionalPlain || ''}`;
-        return fromText(j.text, j.hostedUrl, text, { pay });
+        return fromText(j.text, j.hostedUrl, text, { pay, location: j.categories?.allLocations?.length ? j.categories.allLocations.join(' / ') : j.categories?.location });
       });
     }
     case 'ashby': {
       const d = await fetchJson(`https://api.ashbyhq.com/posting-api/job-board/${t}?includeCompensation=true`);
-      return (d.jobs || []).map((j) => fromText(j.title, j.jobUrl, `${j.employmentType || ''} ${j.compensation?.compensationTierSummary || ''} ${j.descriptionPlain || ''}`));
+      return (d.jobs || []).map((j) => fromText(j.title, j.jobUrl, `${j.employmentType || ''} ${j.compensation?.compensationTierSummary || ''} ${j.descriptionPlain || ''}`, { location: j.isRemote ? 'Remote' : j.location }));
     }
     case 'workable': {
       const d = await fetchJson(`https://apply.workable.com/api/v1/widget/accounts/${t}`);
-      return (d.jobs || []).map((j) => fromText(j.title, j.url || j.shortlink || `https://apply.workable.com/${t}/`, `${j.employment_type || ''} ${stripHtml(j.description || '')}`));
+      return (d.jobs || []).map((j) => fromText(j.title, j.url || j.shortlink || `https://apply.workable.com/${t}/`, `${j.employment_type || ''} ${stripHtml(j.description || '')}`, { location: j.telecommuting ? 'Remote' : [j.city, j.state, j.country] }));
     }
     case 'smartrecruiters': {
       const d = await fetchJson(`https://api.smartrecruiters.com/v1/companies/${t}/postings?limit=100`);
-      return (d.content || []).map((j) => fromText(j.name, `https://jobs.smartrecruiters.com/${t}/${j.id}`, `${j.typeOfEmployment?.label || ''} ${j.experienceLevel?.label || ''}`));
+      return (d.content || []).map((j) => fromText(j.name, `https://jobs.smartrecruiters.com/${t}/${j.id}`, `${j.typeOfEmployment?.label || ''} ${j.experienceLevel?.label || ''}`, { location: j.location?.remote ? 'Remote' : [j.location?.city, j.location?.region, j.location?.country] }));
     }
     case 'recruitee': {
       const d = await fetchJson(`https://${t}.recruitee.com/api/offers/`);
@@ -316,16 +322,16 @@ export async function fetchAtsJobs(ats) {
         const pay = s && (s.min || s.max) ? normalizePay(+s.min || null, +s.max || null, { hour: 'hour', year: 'year', month: 'month', week: 'week' }[s.period], 'listed salary') : null;
         const hours = j.min_hours || j.max_hours ? { types: [], perWeek: { min: +j.min_hours || +j.max_hours, max: +j.max_hours || +j.min_hours }, schedule: [], source: 'listed' } : null;
         if (hours) hours.types.push(hours.perWeek.max >= 35 ? 'Full-time' : 'Part-time');
-        return fromText(j.title, j.careers_url, `${j.employment_type_code || ''} ${stripHtml(j.description || '')} ${stripHtml(j.requirements || '')}`, { pay, hours });
+        return fromText(j.title, j.careers_url, `${j.employment_type_code || ''} ${stripHtml(j.description || '')} ${stripHtml(j.requirements || '')}`, { pay, hours, location: j.remote ? 'Remote' : j.location || [j.city, j.state_code || j.state_name, j.country] });
       });
     }
     case 'breezy': {
       const d = await fetchJson(`https://${t}.breezy.hr/json`);
-      return (d || []).map((j) => fromText(j.name, j.url, `${j.type?.name || ''} ${j.salary || ''}`));
+      return (d || []).map((j) => fromText(j.name, j.url, `${j.type?.name || ''} ${j.salary || ''}`, { location: j.location?.is_remote ? 'Remote' : j.location?.name || [j.location?.city, j.location?.state?.id || j.location?.state?.name] }));
     }
     case 'bamboohr': {
       const d = await fetchJson(`https://${t}.bamboohr.com/careers/list`);
-      return (d.result || []).map((j) => fromText(j.jobOpeningName, `https://${t}.bamboohr.com/careers/${j.id}`, `${j.employmentStatusLabel || ''}`));
+      return (d.result || []).map((j) => fromText(j.jobOpeningName, `https://${t}.bamboohr.com/careers/${j.id}`, `${j.employmentStatusLabel || ''}`, { location: j.isRemote ? 'Remote' : [j.location?.city, j.location?.state] }));
     }
     default:
       return [];
