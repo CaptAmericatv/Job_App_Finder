@@ -72,3 +72,12 @@ input[type=search], input[type=number], select {
 .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); text-decoration: none; }
 .chip span { font-size: 12px; opacity: .8; }
 .away { font-size: 13px; font-weight: 600; color: var(--warn); }
+.company { display: grid; gap: 10px; min-width: 0; }
+@media (min-width: 900px) { .company { grid-column: 1 / -1; } .co-jobs { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); } }
+.co-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.co-head::before { content: '▾'; grid-row: 1 / 3; color: var(--muted); transition: transform .15s; }
+.co-head[aria-expanded="false"]::before { transform: rotate(-90deg); }
+.co-name { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
+.co-count { font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--accent); color: var(--accent-ink); border-radius: 10px; padding: 1px 8px; }
+.co-meta { grid-column: 2 / 4; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.co-jobs { display: grid; gap: 10px; padding-left: 10px; border-left: 2px solid var(--line); }

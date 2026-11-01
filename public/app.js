@@ -242,6 +242,8 @@ function render() {
     distance: (a, b) => (dist(a) - dist(b)),
     pay: (a, b) => ((payOf(b)?.hourlyMax || 0) - (payOf(a)?.hourlyMax || 0)),
     name: (a, b) => biz(a).name.localeCompare(biz(b).name),
+    // Order inside each company; the companies themselves are ordered in companySections().
+    company: (a, b) => (!!a.maybe - !!b.maybe) || a.title.localeCompare(b.title),
   }[sort];
   jobs.sort(sorter);
 
@@ -251,8 +253,9 @@ function render() {
 
   const list = $('list');
   if (state.tab === 'jobs') {
-    list.innerHTML = jobs.length ? jobs.map((j) => jobCard(j, biz(j))).join('')
-      : `<p class="empty">${state.results.size ? 'No jobs match. Check the Leads tab for businesses with hiring pages.' : 'No saved jobs yet. The first check runs automatically.'}</p>`;
+    list.innerHTML = !jobs.length ? `<p class="empty">${state.results.size ? 'No jobs match. Check the Leads tab for businesses with hiring pages.' : 'No saved jobs yet. The first check runs automatically.'}</p>`
+      : sort === 'company' ? companySections(jobs)
+        : jobs.map((j) => jobCard(j, biz(j))).join('');
   } else if (state.tab === 'leads') {
     ls.sort((a, b) => a.b.distance - b.b.distance);
     list.innerHTML = ls.length ? ls.map(({ b, r }) => leadCard(b, r)).join('') : '<p class="empty">No leads yet. Leads are businesses with a careers page or "now hiring" notice where openings couldn\'t be read automatically.</p>';
@@ -290,6 +293,38 @@ function jobCard(j, b) {
   </article>`;
 }
 
+// ---------- grouped by company ----------
+const companyOf = (b) => (b.brand || b.name || '').trim();
+const collapsed = new Set(loadCollapsed());
+function loadCollapsed() {
+  try { return JSON.parse(localStorage.getItem('collapsedCompanies') || '[]'); } catch { return []; }
+}
+
+// One section per company (all locations of a brand together), most jobs first, then A–Z.
+// `jobs` is already in the order wanted inside each company.
+function companySections(jobs) {
+  const byCompany = new Map();
+  for (const j of jobs) {
+    const name = companyOf(biz(j));
+    if (!byCompany.has(name)) byCompany.set(name, []);
+    byCompany.get(name).push(j);
+  }
+  return [...byCompany].sort(([a, x], [b, y]) => (y.length - x.length) || a.localeCompare(b)).map(([name, list]) => {
+    const places = [...new Set(list.map(biz))].sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0));
+    const near = places[0];
+    const where = places.length > 1 ? `${places.length} locations · closest ${near.distance ?? '?'} mi` : `${near.distance ?? '?'} mi`;
+    const open = !collapsed.has(name);
+    return `<section class="company">
+    <button type="button" class="co-head" data-company="${esc(name)}" aria-expanded="${open}">
+      <span class="co-name">${esc(name)}</span>
+      <span class="co-count">${list.length} job${list.length > 1 ? 's' : ''}</span>
+      <span class="co-meta">${esc(where)}${near.category ? ` · ${esc(near.category)}` : ''}</span>
+    </button>
+    ${open ? `<div class="co-jobs">${list.map((j) => jobCard(j, biz(j))).join('')}</div>` : ''}
+  </section>`;
+  }).join('');
+}
+
 function leadCard(b, r) {
   const url = safeUrl(r.careersUrl || b.website);
   const maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${b.name} ${b.address || ''}`)}`;
@@ -314,6 +349,14 @@ function persistSaved() {
   try { localStorage.setItem('savedJobs', JSON.stringify(state.saved)); } catch { /* storage unavailable */ }
 }
 $('list').addEventListener('click', (e) => {
+  const head = e.target.closest('.co-head');
+  if (head) {
+    const name = head.dataset.company;
+    if (collapsed.has(name)) collapsed.delete(name); else collapsed.add(name);
+    try { localStorage.setItem('collapsedCompanies', JSON.stringify([...collapsed])); } catch { /* storage unavailable */ }
+    render();
+    return;
+  }
   const btn = e.target.closest('.star');
   if (!btn) return;
   const key = btn.dataset.key;
