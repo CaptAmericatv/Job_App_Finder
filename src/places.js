@@ -59,6 +59,15 @@ export function normalizeWebsite(url) {
   }
 }
 
+// Facebook page link from a tag (full URL, "facebook.com/x" or just a page name).
+export function facebookUrl(v) {
+  if (!v) return null;
+  const t = String(v).split(';')[0].trim();
+  if (/^https?:\/\//i.test(t)) return /facebook\.com|fb\.com/i.test(t) ? t : null;
+  if (/^(www\.)?(facebook|fb)\.com\//i.test(t)) return `https://${t}`;
+  return /^[\w.-]+$/.test(t) ? `https://www.facebook.com/${t}` : null;
+}
+
 export function parseElements(elements, lat, lon, maxMiles = Infinity) {
   const seen = new Set();
   const out = [];
@@ -83,6 +92,7 @@ export function parseElements(elements, lat, lon, maxMiles = Infinity) {
       distance: Math.round(distanceMiles(lat, lon, plat, plon) * 100) / 100,
       website: normalizeWebsite(tags.website || tags['contact:website'] || tags.url || tags['brand:website']),
       phone: tags.phone || tags['contact:phone'] || null,
+      facebook: facebookUrl(tags['contact:facebook'] || tags.facebook || (/facebook\.com/i.test(tags.website || '') ? tags.website : null)),
       address: address || null,
       city: tags['addr:city'] || null,
       hours: tags.opening_hours || null,

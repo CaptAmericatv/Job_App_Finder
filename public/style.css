@@ -80,3 +80,6 @@ input[type=search], input[type=number], select {
 .co-count { font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--accent); color: var(--accent-ink); border-radius: 10px; padding: 1px 8px; }
 .co-meta { grid-column: 2 / 4; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .co-jobs { display: grid; gap: 10px; padding-left: 10px; border-left: 2px solid var(--line); }
+.fb { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 12px; }
+.fb .hint { width: 100%; }
+a.btn { text-decoration: none; display: inline-block; }

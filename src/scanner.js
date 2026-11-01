@@ -98,7 +98,10 @@ export async function runScan() {
         const b = queue.shift();
         const now = new Date().toISOString();
         const chain = isChain(b);
-        let next = await crawlBusiness(b.website, { chain });
+        // Facebook doesn't allow automated reading; point to the page instead.
+        let next = /(^|\.)(facebook|fb)\.com$/i.test(new URL(b.website).hostname)
+          ? { status: 'hiring-page', jobs: [], careersUrl: b.website, note: 'Uses Facebook as its website. Check their page for hiring posts.' }
+          : await crawlBusiness(b.website, { chain });
         if (chain && next.status === 'error') next = chainLead(b);
         const entry = data.businesses[b.id];
         entry.result = mergeResult(entry.result, next, now);

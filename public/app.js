@@ -48,6 +48,9 @@ async function load() {
     return;
   }
   $('homeName').textContent = d.home.name;
+  const town = d.home.name.split(',')[0];
+  $('fbSearch').href = `https://www.facebook.com/search/posts/?q=${encodeURIComponent(`hiring ${town}`)}`;
+  $('fbGroups').href = `https://www.facebook.com/search/groups/?q=${encodeURIComponent(`${town} jobs`)}`;
   $('homeArea').textContent = `Within ${d.home.radiusMiles} miles · checked every ${d.everyHours} hours`;
   drawHome(d.home);
 
@@ -272,6 +275,7 @@ const biz = (j) => state.businesses.get(j.businessId) || state.saved[j.key]?.biz
 const dist = (j) => biz(j).distance ?? 0;
 
 function jobCard(j, b) {
+  const r = null;
   const pay = j.pay ? `<div class="pay">${esc(formatPay(j.pay))}</div>`
     : j.estimatedPay ? `<div class="pay est">${esc(formatPay(j.estimatedPay))}<span class="badge">EST.</span></div><div class="basis">Estimate: ${esc(j.estimatedPay.basis)}</div>`
       : '';
@@ -293,6 +297,7 @@ function jobCard(j, b) {
       ${url ? `<a href="${url}" target="_blank" rel="noopener">View / apply</a>` : ''}
       <a href="${maps}" target="_blank" rel="noopener">Directions</a>
       ${b.phone ? `<a href="tel:${esc(b.phone.replace(/[^\d+]/g, ''))}">Call</a>` : ''}
+      ${safeUrl(b.facebook) && safeUrl(b.facebook) !== safeUrl(r?.careersUrl || b.website) ? `<a href="${safeUrl(b.facebook)}" target="_blank" rel="noopener">Facebook</a>` : ''}
     </div>
   </article>`;
 }
@@ -332,15 +337,18 @@ function companySections(jobs) {
 function leadCard(b, r) {
   const url = safeUrl(r.careersUrl || b.website);
   const maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${b.name} ${b.address || ''}`)}`;
-  const note = r.status === 'no-website' ? 'No website listed — call or stop by and ask if they are hiring.' : r.note;
+  const note = r.status === 'no-website'
+    ? (b.facebook ? 'No website listed. Check their Facebook page, or call or stop by and ask if they are hiring.' : 'No website listed — call or stop by and ask if they are hiring.')
+    : r.note;
   return `<article class="card">
     <h3><span>${esc(b.name)}</span></h3>
     <div class="biz">${b.distance} mi · ${esc(b.category)}${b.address ? ` · ${esc(b.address)}` : ''}</div>
     <div class="basis">${esc(note || '')}</div>
     <div class="actions">
-      ${url ? `<a href="${url}" target="_blank" rel="noopener">${r.careersUrl ? 'Careers page' : 'Website'}</a>` : ''}
+      ${url ? `<a href="${url}" target="_blank" rel="noopener">${/facebook\.com/i.test(url) ? 'Facebook page' : r.careersUrl ? 'Careers page' : 'Website'}</a>` : ''}
       <a href="${maps}" target="_blank" rel="noopener">Directions</a>
       ${b.phone ? `<a href="tel:${esc(b.phone.replace(/[^\d+]/g, ''))}">Call</a>` : ''}
+      ${safeUrl(b.facebook) && safeUrl(b.facebook) !== safeUrl(r?.careersUrl || b.website) ? `<a href="${safeUrl(b.facebook)}" target="_blank" rel="noopener">Facebook</a>` : ''}
     </div>
   </article>`;
 }

@@ -116,3 +116,12 @@ test('titles without job words count when linked like a job', async () => {
   const $ = load('<ul><li><a href="/jobs/123">Disease Intervention Lead</a></li><li><a href="/jobs/124">Wrangler</a></li><li><a href="/about">Our Story</a></li></ul>');
   assert.deepEqual(jobsFromHtml($, 'https://x.com/careers').map((j) => j.title), ['Disease Intervention Lead', 'Wrangler']);
 });
+
+test('facebook links from map tags', async () => {
+  const { facebookUrl } = await import('../src/places.js');
+  assert.equal(facebookUrl('https://www.facebook.com/joescafe'), 'https://www.facebook.com/joescafe');
+  assert.equal(facebookUrl('facebook.com/joescafe'), 'https://facebook.com/joescafe');
+  assert.equal(facebookUrl('joescafe'), 'https://www.facebook.com/joescafe');
+  assert.equal(facebookUrl('https://joescafe.com'), null);
+  assert.equal(facebookUrl(null), null);
+});
