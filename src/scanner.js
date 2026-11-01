@@ -109,6 +109,7 @@ export async function runScan() {
     };
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     annotateAll();
+    delete data.rescanRequested;
     data.lastScan = { startedAt, finishedAt: new Date().toISOString(), checked: withSite.length, total: all.length };
     console.log(`Scan done: ${withSite.length} websites checked, ${countJobs()} jobs.`);
   } catch (e) {
@@ -167,7 +168,8 @@ export function startSchedule() {
   const tick = () => {
     const last = data.lastScan?.finishedAt ? Date.parse(data.lastScan.finishedAt) : 0;
     const failed = data.lastScan?.failedAt ? Date.parse(data.lastScan.failedAt) : 0;
-    const due = Date.now() - last > SCAN_EVERY_HOURS * 3_600_000 && Date.now() - failed > 30 * 60_000;
+    // rescanRequested: set in data/results.json by hand (or by a deploy) to check early.
+    const due = (data.rescanRequested || Date.now() - last > SCAN_EVERY_HOURS * 3_600_000) && Date.now() - failed > 30 * 60_000;
     if (due) runScan();
   };
   setTimeout(tick, 5_000);
