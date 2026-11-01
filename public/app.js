@@ -159,7 +159,8 @@ function render() {
   const sort = $('sort').value;
   const match = (j, b) => !kw || [j.title, b.name, b.category, formatHours(j.hours || j.estimatedHours), j.snippet].join(' ').toLowerCase().includes(kw);
 
-  let jobs = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay));
+  const hideMaybe = $('hideMaybe').checked;
+  let jobs = state.jobs.filter((j) => match(j, state.businesses.get(j.businessId)) && (!onlyListed || j.pay) && (!hideMaybe || !j.maybe));
   const savedJobs = Object.values(state.saved);
   const ls = leads().filter(({ b }) => !kw || `${b.name} ${b.category}`.toLowerCase().includes(kw));
 
@@ -201,8 +202,9 @@ function jobCard(j, b) {
   const maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${b.name} ${b.address || ''}`)}${b.lat ? `&center=${b.lat},${b.lon}` : ''}`;
   const on = !!state.saved[j.key];
   return `<article class="card">
-    <h3><span>${esc(j.title)}${isNew(j) ? '<span class="new">NEW</span>' : ''}</span><button class="star ${on ? 'on' : ''}" data-key="${esc(j.key)}" aria-label="Save job">${on ? '★' : '☆'}</button></h3>
+    <h3><span>${esc(j.title)}${isNew(j) ? '<span class="new">NEW</span>' : ''}${j.maybe ? '<span class="maybe">MAYBE</span>' : ''}</span><button class="star ${on ? 'on' : ''}" data-key="${esc(j.key)}" aria-label="Save job">${on ? '★' : '☆'}</button></h3>
     <div class="biz">${esc(b.name)} · ${b.distance ?? '?'} mi · ${esc(b.category || '')}</div>
+    ${j.maybe ? `<div class="basis">Might not be an opening: ${esc(j.maybe.toLowerCase())}. Check the link.</div>` : ''}
     ${pay}${hrs}
     ${j.snippet ? `<div class="snippet">${esc(j.snippet)}</div>` : ''}
     <div class="basis">Source: ${esc(j.source || 'Company website')}${j.posted ? ` · posted ${esc(String(j.posted).slice(0, 10))}` : ''}${j.firstSeen ? ` · found ${esc(ago(j.firstSeen))}` : ''}</div>
@@ -256,7 +258,7 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
   state.tab = t.dataset.tab;
   render();
 }));
-['keyword', 'sort', 'onlyListed', 'floor', 'noWebsite'].forEach((id) => $(id).addEventListener('input', render));
+['keyword', 'sort', 'onlyListed', 'hideMaybe', 'floor', 'noWebsite'].forEach((id) => $(id).addEventListener('input', render));
 
 $('csvBtn').addEventListener('click', () => {
   const rows = [['Job title', 'Business', 'Distance (mi)', 'Pay', 'Pay is estimate', 'Hours', 'Hours is estimate', 'Category', 'Address', 'Phone', 'Link']];

@@ -233,17 +233,22 @@ export function jobsFromHtml($, pageUrl) {
   $(selector).each((_, el) => {
     const title = clean($(el).text());
     if (title.length < 3 || title.length > 70) return;
-    if (NOT_A_TITLE.test(title)) return;
-    if (!ROLE_WORDS.test(title)) return;
-    if (HEADING_NOT_JOB.test(title)) return;
-    if (/^Support [A-Z]{2,}$/.test(title)) return; // "Support NACC" donation links
-    if (/[.!?]$/.test(title) && title.split(' ').length > 6) return; // a sentence, not a title
-    if (/[?!®™]|\(video\)|\bprograms?\b/i.test(title) || title.split(/\s+/).length > 8) return; // marketing copy
+    if (NOT_A_TITLE.test(title)) return; // plain navigation: "Careers", "Apply now"
+    const link = $(el).is('a') ? $(el).attr('href') : $(el).find('a[href]').attr('href') || $(el).closest('a[href]').attr('href');
+    // Nothing else is dropped: anything that might be an opening is kept, and
+    // the doubtful ones are marked "maybe" so the page can label them.
+    let maybe = null;
+    if (!ROLE_WORDS.test(title)) {
+      // No job word in it: keep only when the page marks it up or links it like a job.
+      const cls = `${$(el).attr('class') || ''} ${$(el).parent().attr('class') || ''}`;
+      if (!/job|position|opening|vacanc|posting/i.test(cls) && !/job|position|opening|vacanc|posting|apply/i.test(link || '')) return;
+      maybe = 'No job title words';
+    } else if (HEADING_NOT_JOB.test(title) || /^Support [A-Z]{2,}$/.test(title)) maybe = 'Looks like a page heading';
+    else if ((/[.!?]$/.test(title) && title.split(' ').length > 6) || /[?!®™]|\(video\)|\bprograms?\b/i.test(title) || title.split(/\s+/).length > 8) maybe = 'Looks like marketing text';
     const key = title.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
     const context = blockText($, el);
-    const link = $(el).is('a') ? $(el).attr('href') : $(el).find('a[href]').attr('href') || $(el).closest('a[href]').attr('href');
     jobs.push({
       title,
       url: absolute(link, pageUrl) || pageUrl,
@@ -252,9 +257,10 @@ export function jobsFromHtml($, pageUrl) {
       snippet: context.slice(0, 300),
       detailUrl: link && absolute(link, pageUrl) !== pageUrl ? absolute(link, pageUrl) : null,
       guessed: true,
+      maybe,
     });
   });
-  return jobs.slice(0, 40);
+  return jobs.slice(0, 200);
 }
 
 // Page text with spaces between elements (cheerio's .text() glues them together).
@@ -376,7 +382,7 @@ async function crawlUncached(website, chain) {
 
   // 1. Candidate careers pages: links on the home page, then common paths.
   const links = findCareerLinks($home, home.url);
-  const candidates = links.filter((l) => !l.external || l.ats).slice(0, 3).map((l) => l.url);
+  const candidates = links.filter((l) => !l.external || l.ats).slice(0, 5).map((l) => l.url);
   if (!candidates.length) {
     const origin = new URL(home.url).origin;
     for (const p of GUESS_PATHS.slice(0, 4)) candidates.push(origin + p);
@@ -417,7 +423,6 @@ async function crawlUncached(website, chain) {
         }
       }
     }
-    if (jobs.length) break;
   }
 
   // 2. Job boards with public feeds.
@@ -449,7 +454,8 @@ async function crawlUncached(website, chain) {
     if (!j.snippet || j.snippet.length < 80) j.snippet = clean(text).slice(0, 300);
   }
 
-  if (chain) jobs = jobs.filter((j) => !j.guessed);
+  // Chain sites are national; titles read from their headings may not be local openings.
+  if (chain) for (const j of jobs) if (j.guessed) j.maybe ||= 'Chain website, may not be this location';
 
   // Dedupe and tidy.
   const unique = new Map();
@@ -458,7 +464,7 @@ async function crawlUncached(website, chain) {
     const k = j.title.toLowerCase();
     if (!unique.has(k)) unique.set(k, { ...j, source: j.source || 'Company website', detailUrl: undefined });
   }
-  jobs = [...unique.values()].slice(0, 60);
+  jobs = [...unique.values()].slice(0, 500);
 
   if (jobs.length) return { status: 'jobs', jobs, careersUrl: careersUrl || home.url, board: boardLabel };
   if (careersUrl || hiringSignal) {

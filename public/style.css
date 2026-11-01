@@ -66,3 +66,4 @@ input[type=search], input[type=number], select {
 .home-name { font-weight: 600; font-size: 16px; }
 .new { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; background: var(--accent); color: var(--accent-ink); margin-left: 6px; vertical-align: 2px; }
 .btn:disabled { opacity: .5; cursor: default; }
+.maybe { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; border: 1px solid var(--warn); color: var(--warn); margin-left: 6px; vertical-align: 2px; }

@@ -90,16 +90,29 @@ test('overpass parsing', () => {
   assert.equal(out[1].website, 'https://farcafe.com');
 });
 
-test('careers-page headings are not jobs', async () => {
+test('careers-page headings are kept but marked maybe', async () => {
   const { load } = await import('cheerio');
   const { jobsFromHtml } = await import('../src/crawler.js');
   const $ = load('<h2>Team Member Careers</h2><h3>Count on my coworkers</h3><h3>Life at Our Store</h3><h3>Line Cook</h3><h3>Part-Time Cashier</h3>');
-  assert.deepEqual(jobsFromHtml($, 'https://x.com/careers').map((j) => j.title), ['Line Cook', 'Part-Time Cashier']);
+  const out = Object.fromEntries(jobsFromHtml($, 'https://x.com/careers').map((j) => [j.title, j.maybe]));
+  // Nothing is dropped; headings are kept but marked "maybe".
+  assert.deepEqual(Object.keys(out), ['Team Member Careers', 'Line Cook', 'Part-Time Cashier']);
+  assert.equal(out['Line Cook'], null);
+  assert.ok(out['Team Member Careers']);
 });
 
-test('category headings are not jobs', async () => {
+test('category headings are kept but marked maybe', async () => {
   const { load } = await import('cheerio');
   const { jobsFromHtml } = await import('../src/crawler.js');
   const $ = load('<h3>Current Summer Camp / Seasonal Openings</h3><h3>Registration Assistant - Job Description</h3><h3>Health Services Positions</h3><h3>Support NACC</h3><h3>Housekeeper I - PT</h3><h3>Customer Support Specialist</h3>');
-  assert.deepEqual(jobsFromHtml($, 'https://x.com/careers').map((j) => j.title), ['Housekeeper I - PT', 'Customer Support Specialist']);
+  const out = jobsFromHtml($, 'https://x.com/careers');
+  assert.deepEqual(out.filter((j) => !j.maybe).map((j) => j.title), ['Housekeeper I - PT', 'Customer Support Specialist']);
+  assert.equal(out.filter((j) => j.maybe).length, 3);
+});
+
+test('titles without job words count when linked like a job', async () => {
+  const { load } = await import('cheerio');
+  const { jobsFromHtml } = await import('../src/crawler.js');
+  const $ = load('<ul><li><a href="/jobs/123">Disease Intervention Lead</a></li><li><a href="/jobs/124">Wrangler</a></li><li><a href="/about">Our Story</a></li></ul>');
+  assert.deepEqual(jobsFromHtml($, 'https://x.com/careers').map((j) => j.title), ['Disease Intervention Lead', 'Wrangler']);
 });
